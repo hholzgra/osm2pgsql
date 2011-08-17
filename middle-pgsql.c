@@ -187,6 +187,7 @@ static struct ramNodeBlock blocks[NUM_BLOCKS];
 static int usedBlocks;
 /* Note: maxBlocks *must* be odd, to make sure the priority queue has no nodes with only one child */
 static int maxBlocks = 0;
+static void *blockCache = NULL;
 static struct ramNodeBlock **queue;
 static osmid_t storedNodes, totalNodes;
 int nodesCacheHits, nodesCacheLookups;
@@ -226,6 +227,18 @@ static void percolate_up( int pos )
     }
 }
 
+static void *next_chunk(size_t count, size_t size)
+{
+  static size_t pos = 0;
+  void *result;
+
+  result = blockCache + pos;
+  
+  pos += count * size;
+
+  return result;
+}
+
 #define UNUSED  __attribute__ ((unused))
 static int pgsql_ram_nodes_set(osmid_t id, double lat, double lon, struct keyval *tags UNUSED)
 {
@@ -242,7 +255,8 @@ static int pgsql_ram_nodes_set(osmid_t id, double lat, double lon, struct keyval
             /* Upto log(usedBlocks) iterations */
             percolate_up( usedBlocks-1 );
 
-          blocks[block].nodes = calloc(PER_BLOCK, sizeof(struct ramNode));
+	  blocks[block].nodes = next_chunk(PER_BLOCK, sizeof(struct ramNode));
+
           blocks[block].used = 0;
           if (!blocks[block].nodes) {
               fprintf(stderr, "Error allocating nodes\n");
@@ -1277,7 +1291,13 @@ static int pgsql_start(const struct output_options *options)
     /* How much we can fit, and make sure it's odd */
     maxBlocks = (options->cache*((1024*1024)/(PER_BLOCK*sizeof(struct ramNode)))) | 1;
     queue = malloc( maxBlocks * sizeof(struct ramNodeBlock) );    
-    
+    blockCache = malloc(maxBlocks * PER_BLOCK * sizeof(struct ramNode));
+
+    if (!queue || !blockCache) {
+      fprintf(stderr, "Out of memory, reduce --cache size\n");
+      exit_nicely();
+    }
+
 #ifdef __MINGW_H
     fprintf( stderr, "Mid: pgsql, scale=%d, cache=%dMB, maxblocks=%d*%d\n", scale, options->cache, maxBlocks, PER_BLOCK*sizeof(struct ramNode) ); 
 #else
@@ -1441,11 +1461,7 @@ static void pgsql_stop(void)
              storedNodes, 100.0f*storedNodes/totalNodes, 100.0f*storedNodes/(usedBlocks*PER_BLOCK),
              100.0f*nodesCacheHits/nodesCacheLookups );
           
-    for( i=0; i<usedBlocks; i++ )
-    {
-      free(queue[i]->nodes);
-      queue[i]->nodes = NULL;
-    }
+    free(blockCache);
     free(queue);
 
 #ifdef HAVE_PTHREAD
