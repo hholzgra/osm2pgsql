@@ -909,7 +909,7 @@ static int pgsql_ways_delete(osmid_t osm_id)
 static void pgsql_iterate_ways(int (*callback)(osmid_t id, struct keyval *tags, struct osmNode *nodes, int count, int exists))
 {
     PGresult   *res_ways;
-    int i, count = 0;
+    int i, count = 0, total;
     /* The flag we pass to indicate that the way in question might exist already in the database */
     int exists = Append;
 
@@ -921,14 +921,15 @@ static void pgsql_iterate_ways(int (*callback)(osmid_t id, struct keyval *tags, 
     res_ways = pgsql_execPrepared(way_table->sql_conn, "pending_ways", 0, NULL, PGRES_TUPLES_OK);
 
     //fprintf(stderr, "\nIterating ways\n");
-    for (i = 0; i < PQntuples(res_ways); i++) {
+    total = PQntuples(res_ways);
+    for (i = 0; i < total; i++) {
         osmid_t id = strtoosmid(PQgetvalue(res_ways, i, 0), NULL, 10);
         struct keyval tags;
         struct osmNode *nodes;
         int nd_count;
 
         if (count++ %1000 == 0)
-                fprintf(stderr, "\rprocessing way (%dk)", count/1000);
+                fprintf(stderr, "\rprocessing way (%dk of %dk)", count/1000, total/1000);
 
         initList(&tags);
         if( pgsql_ways_get(id, &tags, &nodes, &nd_count) )
@@ -1108,7 +1109,7 @@ static int pgsql_rels_delete(osmid_t osm_id)
 static void pgsql_iterate_relations(int (*callback)(osmid_t id, struct member *members, int member_count, struct keyval *tags, int exists))
 {
     PGresult   *res_rels;
-    int i, count = 0;
+    int i, count = 0, total;
     /* The flag we pass to indicate that the way in question might exist already in the database */
     int exists = Append;
 
@@ -1119,15 +1120,16 @@ static void pgsql_iterate_relations(int (*callback)(osmid_t id, struct member *m
     
     res_rels = pgsql_execPrepared(rel_table->sql_conn, "pending_rels", 0, NULL, PGRES_TUPLES_OK);
 
-    //fprintf(stderr, "\nIterating ways\n");
-    for (i = 0; i < PQntuples(res_rels); i++) {
+    //fprintf(stderr, "\nIterating relations\n");
+    total = PQntuples(res_rels);
+    for (i = 0; i < total; i++) {
         osmid_t id = strtoosmid(PQgetvalue(res_rels, i, 0), NULL, 10);
         struct keyval tags;
         struct member *members;
         int member_count;
 
         if (count++ %10 == 0)
-                fprintf(stderr, "\rprocessing relation (%d)", count);
+                fprintf(stderr, "\rprocessing relation (%d of %d)", count, total);
 
         initList(&tags);
         if( pgsql_rels_get(id, &members, &member_count, &tags) )

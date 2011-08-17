@@ -281,8 +281,42 @@ void resetMembers(struct osmdata_t *osmdata)
 
 void printStatus(struct osmdata_t *osmdata)
 {
-    fprintf(stderr, "\rProcessing: Node(%" PRIdOSMID "k) Way(%" PRIdOSMID "k) Relation(%" PRIdOSMID ")",
-            osmdata->count_node/1000, osmdata->count_way/1000, osmdata->count_rel);
+    static osmid_t old_node = 0, old_way = 0, old_rel = 0;
+    static time_t start = 0, way_start = 0, rel_start = 0, old_end;
+    time_t end;
+    
+    if (!start) {
+      time(&start);
+    } else if (old_way != osmdata->count_way) {
+      if (!way_start) {
+        time(&way_start);
+        fprintf(stderr, "\n");
+      }
+    } else if (old_rel != osmdata->count_rel) {
+      if (!rel_start) {
+        time(&rel_start);
+        fprintf(stderr, "\n");
+      }
+    } 
+
+    time(&end);
+
+    fprintf(stderr, "\rProcessing: %lds Node(%" PRIdOSMID "k) Way(%" PRIdOSMID "k) Relation(%" PRIdOSMID ")",
+            end-start, osmdata->count_node/1000, osmdata->count_way/1000, osmdata->count_rel);
+
+     
+    if (old_node != osmdata->count_node) {
+      if (end != start) fprintf(stderr, " %" PRIdOSMID " nodes/s   ", osmdata->count_node / (int)(end - start));
+    } else if (old_way != osmdata->count_way) {
+      if (end != way_start) fprintf(stderr, " %" PRIdOSMID " ways/s    ", osmdata->count_way / (int)(end - way_start));
+    } else if (old_rel != osmdata->count_rel) {
+      if (end != rel_start) fprintf(stderr, " %" PRIdOSMID " rels/s    ", osmdata->count_rel / (int)(end - rel_start));
+    } 
+
+    old_node = osmdata->count_node;
+    old_way  = osmdata->count_way;
+    old_rel  = osmdata->count_rel;
+    old_end  = end;
 }
 
 int node_wanted(struct osmdata_t *osmdata, double lat, double lon)
@@ -564,6 +598,7 @@ int main(int argc, char *argv[])
 
         fprintf(stderr, "\nReading in file: %s\n", argv[optind]);
         time(&start);
+        printStatus(&osmdata);
         if (streamFile(argv[optind], sanitize, &osmdata) != 0)
             exit_nicely();
         time(&end);
