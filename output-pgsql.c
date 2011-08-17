@@ -1171,6 +1171,8 @@ static int pgsql_out_start(const struct output_options *options)
         }
         tables[i].sql_conn = sql_conn;
 
+        pgsql_exec(sql_conn, PGRES_COMMAND_OK, "SET client_min_messages TO 'warning'");
+
         if (!options->append) {
             pgsql_exec(sql_conn, PGRES_COMMAND_OK, "DROP TABLE IF EXISTS %s", tables[i].name);
         }

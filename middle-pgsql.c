@@ -1309,6 +1309,8 @@ static int pgsql_start(const struct output_options *options)
         }
         tables[i].sql_conn = sql_conn;
 
+        pgsql_exec(sql_conn, PGRES_COMMAND_OK, "SET client_min_messages TO 'warning'");
+
         /* Not really the right place for this test, but we need a live
          * connection that not used for anything else yet, and we'd like to
          * warn users *before* we start doing mountains of work */
