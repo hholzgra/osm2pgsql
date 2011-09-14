@@ -68,7 +68,7 @@ int verbose;
 static struct osmdata_t osmdata = { 
   .filetype = FILETYPE_NONE,
   .action   = ACTION_NONE,
-  .bbox     = NULL
+  .bbox     = NULL,
 };
 
 
@@ -310,6 +310,7 @@ int main(int argc, char *argv[])
     int expire_tiles_zoom_min = -1;
     int enable_hstore = HSTORE_NONE;
     int enable_multi = 0;
+    int parallel_indexing = 0;
     const char *expire_tiles_filename = "dirty_tiles";
     const char *db = "gis";
     const char *username=NULL;
@@ -375,10 +376,11 @@ int main(int argc, char *argv[])
             {"keep-coastlines", 0, 0, 'K'},
             {"input-reader", 1, 0, 'r'},
             {"version", 0, 0, 'V'},
+            {"parallel-indexing", 1, 0, 'I'},
             {0, 0, 0, 0}
         };
 
-        c = getopt_long (argc, argv, "ab:cd:KhlmMp:suvU:WH:P:i:E:C:S:e:o:O:xkjGz:r:V", long_options, &option_index);
+        c = getopt_long (argc, argv, "ab:cd:KhlmMp:suvU:WH:P:i:IE:C:S:e:o:O:xkjGz:r:V", long_options, &option_index);
         if (c == -1)
             break;
 
@@ -426,6 +428,13 @@ int main(int argc, char *argv[])
             case 'G': enable_multi=1; break;
             case 'r': input_reader = optarg; break;
             case 'h': long_usage_bool=1; break;
+            case 'I': 
+#ifdef HAVE_PTHREAD
+                parallel_indexing=1; 
+#else
+                fprintf(stderr, "WARNING: no pthreads support, parallel_indexing disabled\n");
+#endif
+                break;
             case 'V': exit(EXIT_SUCCESS);
             case '?':
             default:
@@ -503,6 +512,7 @@ int main(int argc, char *argv[])
     options.hstore_columns = hstore_columns;
     options.n_hstore_columns = n_hstore_columns;
     options.keep_coastlines = keep_coastlines;
+    options.parallel_indexing = parallel_indexing;
 
     if (strcmp("pgsql", output_backend) == 0) {
       osmdata.out = &out_pgsql;
