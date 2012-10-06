@@ -556,20 +556,6 @@ int main(int argc, char *argv[])
         password = getenv("PGPASS");
     }	
 
-    conninfo = build_conninfo(db, username, password, host, port);
-    sql_conn = PQconnectdb(conninfo);
-    if (PQstatus(sql_conn) != CONNECTION_OK) {
-        fprintf(stderr, "Error: Connection to database failed: %s\n", PQerrorMessage(sql_conn));
-        exit(EXIT_FAILURE);
-    }
-    if (unlogged && PQserverVersion(sql_conn) < 90100) {
-        fprintf(stderr, "Error: --unlogged works only with PostgreSQL 9.1 and above, but\n");
-        fprintf(stderr, "you are using PostgreSQL %d.%d.%d.\n", PQserverVersion(sql_conn) / 10000, (PQserverVersion(sql_conn) / 100) % 100, PQserverVersion(sql_conn) % 100);
-        exit(EXIT_FAILURE);
-    }
-
-    PQfinish(sql_conn);
-
     text_init();
     initList(&osmdata.tags);
 
@@ -592,7 +578,6 @@ int main(int argc, char *argv[])
     options.slim = slim;
     options.projection = project_getprojinfo()->srs;
     options.scale = (projection==PROJ_LATLONG)?10000000:100;
-    options.mid = slim ? &mid_pgsql : &mid_ram;
     options.cache = cache;
     options.style = style;
     options.tblsmain_index = tblsmain_index;
@@ -616,6 +601,28 @@ int main(int argc, char *argv[])
     options.flat_node_cache_enabled = flat_node_cache_enabled;
     options.flat_node_file = flat_nodes_file;
     options.excludepoly = excludepoly;
+
+    if (slim) {
+      options.mid = &mid_pgsql;
+
+      if (unlogged) {
+	conninfo = build_conninfo(db, username, password, host, port);
+	sql_conn = PQconnectdb(conninfo);
+	if (PQstatus(sql_conn) != CONNECTION_OK) {
+	  fprintf(stderr, "Error: Connection to database failed: %s\n", PQerrorMessage(sql_conn));
+	  exit(EXIT_FAILURE);
+	}
+	if (PQserverVersion(sql_conn) < 90100) {
+	  fprintf(stderr, "Error: --unlogged works only with PostgreSQL 9.1 and above, but\n");
+	  fprintf(stderr, "you are using PostgreSQL %d.%d.%d.\n", PQserverVersion(sql_conn) / 10000, (PQserverVersion(sql_conn) / 100) % 100, PQserverVersion(sql_conn) % 100);
+	  exit(EXIT_FAILURE);
+	}
+      }
+
+      PQfinish(sql_conn);
+    } else {
+      options.mid = &mid_ram;
+    }
 
     if (strcmp("pgsql", output_backend) == 0) {
       osmdata.out = &out_pgsql;
