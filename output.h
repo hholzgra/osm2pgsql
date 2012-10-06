@@ -87,6 +87,4 @@ struct output_t {
     int (*relation_delete)(osmid_t id);
 };
 
-unsigned int pgsql_filter_tags(enum OsmType type, struct keyval *tags, int *polygon);
-
 #endif
