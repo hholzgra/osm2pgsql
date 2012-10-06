@@ -185,6 +185,9 @@ static void long_usage(char *arg0)
     printf("   -O|--output\t\tOutput backend.\n");
     printf("              \t\tpgsql - Output to a PostGIS database. (default)\n");
     printf("              \t\tgazetteer - Output to a PostGIS database suitable for gazetteer\n");
+#ifdef HAVE_MYSQL
+    printf("              \t\tmysql - Output to a MySQL database.\n");
+#endif
     printf("              \t\tnull  - No output. Useful for testing.\n");
     printf("   -x|--extra-attributes\n");
     printf("              \t\tInclude attributes for each object in the database.\n");
@@ -593,6 +596,10 @@ int main(int argc, char *argv[])
       osmdata.out = &out_pgsql;
     } else if (strcmp("gazetteer", output_backend) == 0) {
       osmdata.out = &out_gazetteer;
+#ifdef HAVE_MYSQL
+    } else if (strcmp("mysql", output_backend) == 0) {
+      osmdata.out = &out_mysql;
+#endif
     } else if (strcmp("null", output_backend) == 0) {
       osmdata.out = &out_null;
     } else {
