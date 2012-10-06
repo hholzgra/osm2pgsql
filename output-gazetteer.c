@@ -882,15 +882,7 @@ static int gazetteer_out_start(const struct output_options *options)
    Options = options;
 
    /* Connection to the database */
-   Connection = PQconnectdb(options->conninfo);
-   //ConnectionError = PQconnectdb(options->conninfo);
-
-   /* Check to see that the backend connection was successfully made */
-   if (PQstatus(Connection) != CONNECTION_OK)
-   {
-      fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(Connection));
-      exit_nicely();
-   }
+   Connection = pgsql_get_connection(options->conn);
 
    /* Start a transaction */
    pgsql_exec(Connection, PGRES_COMMAND_OK, "BEGIN");
@@ -932,12 +924,7 @@ static int gazetteer_out_start(const struct output_options *options)
       pgsql_exec(Connection, PGRES_TUPLES_OK, "SELECT AddGeometryColumn('place', 'geometry', %d, 'GEOMETRY', 2)", SRID);
       pgsql_exec(Connection, PGRES_COMMAND_OK, "ALTER TABLE place ALTER COLUMN geometry SET NOT NULL");
    } else {
-      ConnectionDelete = PQconnectdb(options->conninfo);
-      if (PQstatus(ConnectionDelete) != CONNECTION_OK)
-      { 
-          fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(ConnectionDelete));
-          exit_nicely();
-      }
+      ConnectionDelete = pgsql_get_connection(options->conn);
 
       pgsql_exec(ConnectionDelete, PGRES_COMMAND_OK, "PREPARE get_classes (CHAR(1), " POSTGRES_OSMID_TYPE ") AS SELECT class FROM place WHERE osm_type = $1 and osm_id = $2");
    }

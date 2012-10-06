@@ -46,6 +46,7 @@
 #include "middle-ram.h"
 #include "node-ram-cache.h"
 #include "output-pgsql.h"
+#include "pgsql.h"
 #ifdef HAVE_MYSQL
 #include "output-mysql.h"
 #endif
@@ -241,39 +242,6 @@ static void long_usage(char *arg0)
     }
 }
 
-const char *build_conninfo(const char *db, const char *username, const char *password, const char *host, const char *port)
-{
-    static char conninfo[1024];
-
-    conninfo[0]='\0';
-    strcat(conninfo, "dbname='");
-    strcat(conninfo, db);
-    strcat(conninfo, "'");
-
-    if (username) {
-        strcat(conninfo, " user='");
-        strcat(conninfo, username);
-        strcat(conninfo, "'");
-    }
-    if (password) {
-        strcat(conninfo, " password='");
-        strcat(conninfo, password);
-        strcat(conninfo, "'");
-    }
-    if (host) {
-        strcat(conninfo, " host='");
-        strcat(conninfo, host);
-        strcat(conninfo, "'");
-    }
-    if (port) {
-        strcat(conninfo, " port='");
-        strcat(conninfo, port);
-        strcat(conninfo, "'");
-    }
-
-    return conninfo;
-}
-
 void realloc_nodes(struct osmdata_t *osmdata)
 {
   if( osmdata->nd_max == 0 )
@@ -375,7 +343,6 @@ int main(int argc, char *argv[])
     const char *tblsmain_data = NULL;  // no default TABLESPACE for main tables
     const char *tblsslim_index = NULL; // no default TABLESPACE for index on slim mode tables
     const char *tblsslim_data = NULL;  // no default TABLESPACE for slim mode tables
-    const char *conninfo = NULL;
     const char *prefix = "planet_osm";
     const char *style = OSM2PGSQL_DATADIR "/default.style";
     const char *temparg;
@@ -575,7 +542,11 @@ int main(int argc, char *argv[])
     if (parse_bbox(&osmdata))
         return 1;
 
-    options.conninfo = conninfo;
+    options.conn.db = db;
+    options.conn.username = username;
+    options.conn.password = password;
+    options.conn.host = host;
+    options.conn.port = port;
     options.prefix = prefix;
     options.append = append;
     options.slim = slim;
@@ -609,20 +580,11 @@ int main(int argc, char *argv[])
       options.mid = &mid_pgsql;
 
       if (unlogged) {
-	conninfo = build_conninfo(db, username, password, host, port);
-	sql_conn = PQconnectdb(conninfo);
-	if (PQstatus(sql_conn) != CONNECTION_OK) {
-	  fprintf(stderr, "Error: Connection to database failed: %s\n", PQerrorMessage(sql_conn));
-	  exit(EXIT_FAILURE);
-	}
-	if (PQserverVersion(sql_conn) < 90100) {
-	  fprintf(stderr, "Error: --unlogged works only with PostgreSQL 9.1 and above, but\n");
-	  fprintf(stderr, "you are using PostgreSQL %d.%d.%d.\n", PQserverVersion(sql_conn) / 10000, (PQserverVersion(sql_conn) / 100) % 100, PQserverVersion(sql_conn) % 100);
+	if (!pgsql_check_version(options.conn, 90100, "--unlogged")) {
 	  exit(EXIT_FAILURE);
 	}
       }
 
-      PQfinish(sql_conn);
     } else {
       options.mid = &mid_ram;
     }

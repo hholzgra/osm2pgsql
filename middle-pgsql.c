@@ -153,13 +153,8 @@ static int pgsql_connect(const struct output_options *options) {
     /* We use a connection per table to enable the use of COPY */
     for (i=0; i<num_tables; i++) {
         PGconn *sql_conn;
-        sql_conn = PQconnectdb(options->conninfo);
+        sql_conn = pgsql_get_connection(options->conn);
 
-        /* Check to see that the backend connection was successfully made */
-        if (PQstatus(sql_conn) != CONNECTION_OK) {
-            fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(sql_conn));
-            exit_nicely();
-        }
         tables[i].sql_conn = sql_conn;
 
         pgsql_exec(sql_conn, PGRES_COMMAND_OK, "SET synchronous_commit TO off;");
@@ -1430,13 +1425,8 @@ static int pgsql_start(const struct output_options *options)
         set_prefix_and_tbls(options, &(tables[i].array_indexes));
 
         fprintf(stderr, "Setting up table: %s\n", tables[i].name);
-        sql_conn = PQconnectdb(options->conninfo);
+        sql_conn = pgsql_get_connection(options->conn);
 
-        /* Check to see that the backend connection was successfully made */
-        if (PQstatus(sql_conn) != CONNECTION_OK) {
-            fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(sql_conn));
-            exit_nicely();
-        }
         tables[i].sql_conn = sql_conn;
 
         /*

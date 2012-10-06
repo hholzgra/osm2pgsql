@@ -131,3 +131,64 @@ PGresult *pgsql_execPrepared( PGconn *sql_conn, const char *stmtName, int nParam
     return res;
 }
 
+const char *pgsql_conninfo(struct db_conn conn)
+{
+    static char conninfo[1024];
+
+    conninfo[0]='\0';
+    strcat(conninfo, "dbname='");
+    strcat(conninfo, conn.db);
+    strcat(conninfo, "'");
+
+    if (conn.username) {
+        strcat(conninfo, " user='");
+        strcat(conninfo, conn.username);
+        strcat(conninfo, "'");
+    }
+    if (conn.password) {
+        strcat(conninfo, " password='");
+        strcat(conninfo, conn.password);
+        strcat(conninfo, "'");
+    }
+    if (conn.host) {
+        strcat(conninfo, " host='");
+        strcat(conninfo, conn.host);
+        strcat(conninfo, "'");
+    }
+    if (conn.port) {
+        strcat(conninfo, " port='");
+        strcat(conninfo, conn.port);
+        strcat(conninfo, "'");
+    }
+
+    return conninfo;
+}
+
+PGconn * pgsql_get_connection(struct db_conn conn)
+{
+  PGconn *Connection = PQconnectdb(pgsql_conninfo(conn));
+  
+  if (PQstatus(Connection) != CONNECTION_OK) {
+    fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(Connection));
+    exit_nicely();
+  }
+  
+  return Connection;
+}
+
+int pgsql_check_version(struct db_conn conn, int version, const char *feature)
+{
+  int result = 1;
+
+  PGconn *sql_conn = pgsql_get_connection(conn);
+
+  if (PQserverVersion(sql_conn) < version) {
+    fprintf(stderr, "Error: %s works only with PostgreSQL %d.%d.%d and above,\n", feature, version / 10000, (version / 100) % 100, version % 100);
+    fprintf(stderr, "but you are using PostgreSQL %d.%d.%d.\n", PQserverVersion(sql_conn) / 10000, (PQserverVersion(sql_conn) / 100) % 100, PQserverVersion(sql_conn) % 100);
+    result = 0;
+  }
+
+  PQfinish(sql_conn);
+
+  return result;
+}

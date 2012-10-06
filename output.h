@@ -21,8 +21,16 @@
 /* create a hstore column for all tags */
 #define HSTORE_ALL 2
 
+struct db_conn {
+  const char *db;
+  const char *username;
+  const char *password;
+  const char *host;
+  const char *port;
+};
+
 struct output_options {
-  const char *conninfo;  /* Connection info string */
+  struct db_conn conn;  /* Connection info string */
   const char *prefix;    /* prefix for table names */
   int scale;       /* scale for converting coordinates to fixed point */
   int projection;  /* SRS of projection */

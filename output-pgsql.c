@@ -1211,13 +1211,8 @@ static int pgsql_out_connect(const struct output_options *options, int startTran
     int i;
     for (i=0; i<NUM_TABLES; i++) {
         PGconn *sql_conn;
-        sql_conn = PQconnectdb(options->conninfo);
+        sql_conn = pgsql_get_connection(options->conn);
         
-        /* Check to see that the backend connection was successfully made */
-        if (PQstatus(sql_conn) != CONNECTION_OK) {
-            fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(sql_conn));
-            exit_nicely();
-        }
         tables[i].sql_conn = sql_conn;
         pgsql_exec(sql_conn, PGRES_COMMAND_OK, "SET synchronous_commit TO off;");
         pgsql_exec(sql_conn, PGRES_COMMAND_OK, "PREPARE get_wkt (" POSTGRES_OSMID_TYPE ") AS SELECT ST_AsText(way) FROM %s WHERE osm_id = $1;\n", tables[i].name);
@@ -1252,13 +1247,8 @@ static int pgsql_out_start(const struct output_options *options)
             tables[i].name = temp;
         }
         fprintf(stderr, "Setting up table: %s\n", tables[i].name);
-        sql_conn = PQconnectdb(options->conninfo);
+        sql_conn = pgsql_get_connection(options->conn);
 
-        /* Check to see that the backend connection was successfully made */
-        if (PQstatus(sql_conn) != CONNECTION_OK) {
-            fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(sql_conn));
-            exit_nicely();
-        }
         tables[i].sql_conn = sql_conn;
         pgsql_exec(sql_conn, PGRES_COMMAND_OK, "SET synchronous_commit TO off;");
 
