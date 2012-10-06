@@ -659,11 +659,11 @@ static void add_place(char osm_type, osmid_t osm_id, const char *class, const ch
    sprintf(sql, "%c\t%" PRIdOSMID "\t", osm_type, osm_id);
    copy_data(sql);
 
-   escape(sql, sizeof(sql), class);
+   pgsql_escape(sql, sizeof(sql), class);
    copy_data(sql);
    copy_data("\t");
 
-   escape(sql, sizeof(sql), type);
+   pgsql_escape(sql, sizeof(sql), type);
    copy_data(sql);
    copy_data("\t");
 
@@ -700,7 +700,7 @@ static void add_place(char osm_type, osmid_t osm_id, const char *class, const ch
 
    if (housenumber)
    {
-      escape(sql, sizeof(sql), housenumber->value);
+      pgsql_escape(sql, sizeof(sql), housenumber->value);
       copy_data(sql);
       copy_data("\t");
    }
@@ -711,7 +711,7 @@ static void add_place(char osm_type, osmid_t osm_id, const char *class, const ch
 
    if (street)
    {
-      escape(sql, sizeof(sql), street->value);
+      pgsql_escape(sql, sizeof(sql), street->value);
       copy_data(sql);
       copy_data("\t");
    }
@@ -723,7 +723,7 @@ static void add_place(char osm_type, osmid_t osm_id, const char *class, const ch
    if (isin)
    {
       // Skip the leading ',' from the contactination
-      escape(sql, sizeof(sql), isin+1);
+      pgsql_escape(sql, sizeof(sql), isin+1);
       copy_data(sql);
       copy_data("\t");
    }
@@ -734,7 +734,7 @@ static void add_place(char osm_type, osmid_t osm_id, const char *class, const ch
 
    if (postcode)
    {
-      escape(sql, sizeof(sql), postcode->value);
+      pgsql_escape(sql, sizeof(sql), postcode->value);
       copy_data(sql);
       copy_data("\t");
    }
@@ -745,7 +745,7 @@ static void add_place(char osm_type, osmid_t osm_id, const char *class, const ch
 
    if (countrycode)
    {
-      escape(sql, sizeof(sql), countrycode->value);
+      pgsql_escape(sql, sizeof(sql), countrycode->value);
       copy_data(sql);
       copy_data("\t");
    }
@@ -804,11 +804,11 @@ static void add_polygon_error(char osm_type, osmid_t osm_id, const char *class, 
    sprintf(sql, "%c\t%" PRIdOSMID "\t", osm_type, osm_id);
    copy_error_data(sql);
 
-   escape(sql, sizeof(sql), class);
+   pgsql_escape(sql, sizeof(sql), class);
    copy_error_data(sql);
    copy_error_data("\t");
 
-   escape(sql, sizeof(sql), type);
+   pgsql_escape(sql, sizeof(sql), type);
    copy_error_data(sql);
    copy_error_data("\t");
 
@@ -842,7 +842,7 @@ static void add_polygon_error(char osm_type, osmid_t osm_id, const char *class, 
 
    if (countrycode)
    {
-      escape(sql, sizeof(sql), countrycode);
+      pgsql_escape(sql, sizeof(sql), countrycode);
       copy_error_data(sql);
       copy_error_data("\t");
    }
