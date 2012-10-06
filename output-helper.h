@@ -1,6 +1,10 @@
 #ifndef OUTPUT_HELPER_H
 #define OUTPUT_HELPER_H
 
+enum table_id {
+    t_point, t_line, t_poly, t_roads
+};
+
 /* Data to generate z-order column and road table
  * The name of the roads table is misleading, this table
  * is used for any feature to be shown at low zoom.
