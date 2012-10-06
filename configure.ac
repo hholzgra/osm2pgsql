@@ -104,6 +104,9 @@ then
     AC_MSG_ERROR([postgresql client library not found])
 fi
 
+dnl Check for MySQL client library (optional)
+AX_LIB_MYSQL
+AM_CONDITIONAL([HAVE_MYSQL], [test "x$MYSQL_VERSION" != "x"])
 
 dnl Check for pthread library
 AX_PTHREAD(,[AC_MSG_ERROR([no])])
