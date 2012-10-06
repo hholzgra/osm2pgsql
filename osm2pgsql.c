@@ -46,6 +46,9 @@
 #include "middle-ram.h"
 #include "node-ram-cache.h"
 #include "output-pgsql.h"
+#ifdef HAVE_MYSQL
+#include "output-mysql.h"
+#endif
 #include "output-gazetteer.h"
 #include "output-null.h"
 #include "sanitizer.h"

@@ -8,7 +8,7 @@
 
 #include "osmtypes.h"
 #include "output.h"
-#include "output-null.h"
+#include "output-mysql.h"
 
 #define UNUSED  __attribute__ ((unused))
 
