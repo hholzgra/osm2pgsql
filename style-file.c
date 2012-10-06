@@ -169,3 +169,110 @@ int tag_indicates_polygon(enum OsmType type, const char *key)
 
     return 0;
 }
+
+/* Go through the given tags and determine the union of flags. Also remove
+ * any tags from the list that we don't know about */
+unsigned int filter_tags(enum OsmType type, struct keyval *tags, int *polygon, const struct output_options *Options)
+{
+    int i, filter = 1;
+    int flags = 0;
+    int add_area_tag = 0;
+
+    const char *area;
+    struct keyval *item;
+    struct keyval temp;
+    initList(&temp);
+
+    /* We used to only go far enough to determine if it's a polygon or not, but now we go through and filter stuff we don't need */
+    while( (item = popItem(tags)) != NULL )
+    {
+        /* Allow named islands to appear as polygons */
+        if (!strcmp("natural",item->key) && !strcmp("coastline",item->value))
+        {               
+            add_area_tag = 1; 
+        }
+
+        /* Discard natural=coastline tags (we render these from a shapefile instead) */
+        if (!Options->keep_coastlines && !strcmp("natural",item->key) && !strcmp("coastline",item->value))
+        {               
+            freeItem( item );
+            item = NULL;
+            continue;
+        }
+
+        for (i=0; i < exportListCount[type]; i++)
+        {
+            if (wildMatch( exportList[type][i].name, item->key ))
+            {
+                if( exportList[type][i].flags & FLAG_DELETE )
+                {
+                    freeItem( item );
+                    item = NULL;
+                    break;
+                }
+
+                filter = 0;
+                flags |= exportList[type][i].flags;
+
+                pushItem( &temp, item );
+                item = NULL;
+                break;
+            }
+        }
+
+        /** if tag not found in list of exports: */
+        if (i == exportListCount[type])
+        {
+            if (Options->enable_hstore) {
+                /* with hstore, copy all tags... */
+                pushItem(&temp, item);
+                /* ... but if hstore_match_only is set then don't take this 
+                   as a reason for keeping the object */
+                if (!Options->hstore_match_only) filter = 0;
+            } else if (Options->n_hstore_columns) {
+                /* does this column match any of the hstore column prefixes? */
+                int j;
+                for (j = 0; j < Options->n_hstore_columns; j++) {
+                    char *pos = strstr(item->key, Options->hstore_columns[j]);
+                    if (pos == item->key) {
+                        pushItem(&temp, item);
+                        /* ... but if hstore_match_only is set then don't take this 
+                           as a reason for keeping the object */
+                        if (!Options->hstore_match_only) filter = 0;
+                        break; 
+                    }
+                }
+                /* if not, skip the tag */
+                if (j == Options->n_hstore_columns) {
+                    freeItem(item);
+                }
+            } else {
+                freeItem(item);
+            }
+            item = NULL;
+        }
+    }
+
+    /* Move from temp list back to original list */
+    while( (item = popItem(&temp)) != NULL )
+        pushItem( tags, item );
+
+    *polygon = flags & FLAG_POLYGON;
+
+    /* Special case allowing area= to override anything else */
+    if ((area = getItem(tags, "area"))) {
+        if (!strcmp(area, "yes") || !strcmp(area, "true") ||!strcmp(area, "1"))
+            *polygon = 1;
+        else if (!strcmp(area, "no") || !strcmp(area, "false") || !strcmp(area, "0"))
+            *polygon = 0;
+    } else {
+        /* If we need to force this as a polygon, append an area tag */
+        if (add_area_tag) {
+            addItem(tags, "area", "yes", 0);
+            *polygon = 1;
+        }
+    }
+
+    return filter;
+}
+

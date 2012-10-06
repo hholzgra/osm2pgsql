@@ -39,4 +39,6 @@ void free_style_refs(const char *name, const char *type);
 void free_style(void);
 int tag_indicates_polygon(enum OsmType type, const char *key);
 
+unsigned int filter_tags(enum OsmType type, struct keyval *tags, int *polygon, const struct output_options *Options);
+
 #endif
