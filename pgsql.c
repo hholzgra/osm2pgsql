@@ -8,7 +8,7 @@
 #include "osmtypes.h" // For exit_nicely()
 #include "pgsql.h"
 
-void escape(char *out, int len, const char *in)
+void pgsql_escape(char *out, int len, const char *in)
 { 
     /* Apply escaping of TEXT COPY data
     Escape: backslash itself, newline, carriage return, and the current delimiter character (tab)
