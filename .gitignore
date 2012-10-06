@@ -1,8 +1,7 @@
-osm2pgsql
 *.o
+.deps
 Makefile
 Makefile.in
-.deps
 aclocal.m4
 autom4te.cache/
 config.guess
@@ -13,6 +12,7 @@ config.nice
 config.status
 config.sub
 configure
+core
 depcomp
 fileformat.pb-c.c
 fileformat.pb-c.h
@@ -27,7 +27,7 @@ m4/ltversion.m4
 m4/lt~obsolete.m4
 missing
 nodecachefilereader
+osm2pgsql
 osmformat.pb-c.c
 osmformat.pb-c.h
 stamp-h1
-core
