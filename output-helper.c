@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "osmtypes.h"
+#include "output.h"
 #include "output-helper.h"
 
 int add_z_order(struct keyval *tags, int *roads)
