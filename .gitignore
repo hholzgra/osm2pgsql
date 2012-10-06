@@ -1,3 +1,4 @@
+osm2pgsql
 *.o
 Makefile
 Makefile.in
