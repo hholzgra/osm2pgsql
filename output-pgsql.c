@@ -31,13 +31,10 @@
 #include "pgsql.h"
 #include "expire-tiles.h"
 #include "wildcmp.h"
+#include "style-file.h"
+#include "output-helper.h"
 
 #define SRID (project_getprojinfo()->srs)
-
-/* FIXME: Shouldn't malloc this all to begin with but call realloc()
-   as required. The program will most likely segfault if it reads a
-   style file with more styles than this */
-#define MAX_STYLES 1000
 
 enum table_id {
     t_point, t_line, t_poly, t_roads
@@ -63,200 +60,16 @@ static struct s_table {
 };
 #define NUM_TABLES ((signed)(sizeof(tables) / sizeof(tables[0])))
 
-#define FLAG_POLYGON 1    /* For polygon table */
-#define FLAG_LINEAR  2    /* For lines table */
-#define FLAG_NOCACHE 4    /* Optimisation: don't bother remembering this one */
-#define FLAG_DELETE  8    /* These tags should be simply deleted on sight */
-#define FLAG_PHSTORE 17   /* polygons without own column but listed in hstore this implies FLAG_POLYGON */
-static struct flagsname {
-    char *name;
-    int flag;
-} tagflags[] = {
-    { .name = "polygon",    .flag = FLAG_POLYGON },
-    { .name = "linear",     .flag = FLAG_LINEAR },
-    { .name = "nocache",    .flag = FLAG_NOCACHE },
-    { .name = "delete",     .flag = FLAG_DELETE },
-    { .name = "phstore",    .flag = FLAG_PHSTORE }
-};
-#define NUM_FLAGS ((signed)(sizeof(tagflags) / sizeof(tagflags[0])))
 
-/* Table columns, representing key= tags */
-struct taginfo {
-    char *name;
-    char *type;
-    int flags;
-    int count;
-};
 
-static struct taginfo *exportList[4]; /* Indexed by enum table_id */
-static int exportListCount[4];
 
-/* Data to generate z-order column and road table
- * The name of the roads table is misleading, this table
- * is used for any feature to be shown at low zoom.
- * This includes railways and administrative boundaries too
- */
-static struct {
-    int offset;
-    const char *highway;
-    int roads;
-} layers[] = {
-    { 3, "minor",         0 },
-    { 3, "road",          0 },
-    { 3, "unclassified",  0 },
-    { 3, "residential",   0 },
-    { 4, "tertiary_link", 0 },
-    { 4, "tertiary",      0 },
-   // 5 = railway
-    { 6, "secondary_link",1 },
-    { 6, "secondary",     1 },
-    { 7, "primary_link",  1 },
-    { 7, "primary",       1 },
-    { 8, "trunk_link",    1 },
-    { 8, "trunk",         1 },
-    { 9, "motorway_link", 1 },
-    { 9, "motorway",      1 }
-};
-static const unsigned int nLayers = (sizeof(layers)/sizeof(*layers));
 
 static int pgsql_delete_way_from_output(osmid_t osm_id);
 static int pgsql_delete_relation_from_output(osmid_t osm_id);
 static int pgsql_process_relation(osmid_t id, struct member *members, int member_count, struct keyval *tags, int exists);
 
-void read_style_file( const char *filename )
-{
-  FILE *in;
-  int lineno = 0;
-  int num_read = 0;
 
-  exportList[OSMTYPE_NODE] = malloc( sizeof(struct taginfo) * MAX_STYLES );
-  exportList[OSMTYPE_WAY]  = malloc( sizeof(struct taginfo) * MAX_STYLES );
 
-  in = fopen( filename, "rt" );
-  if( !in )
-  {
-    fprintf( stderr, "Couldn't open style file '%s': %s\n", filename, strerror(errno) );
-    exit_nicely();
-  }
-  
-  char buffer[1024];
-  while( fgets( buffer, sizeof(buffer), in) != NULL )
-  {
-    lineno++;
-    
-    char osmtype[24];
-    char tag[64];
-    char datatype[24];
-    char flags[128];
-    int i;
-    char *str;
-
-    str = strchr( buffer, '#' );
-    if( str )
-      *str = '\0';
-      
-    int fields = sscanf( buffer, "%23s %63s %23s %127s", osmtype, tag, datatype, flags );
-    if( fields <= 0 )  /* Blank line */
-      continue;
-    if( fields < 3 )
-    {
-      fprintf( stderr, "Error reading style file line %d (fields=%d)\n", lineno, fields );
-      exit_nicely();
-    }
-    struct taginfo temp;
-    temp.name = strdup(tag);
-    temp.type = strdup(datatype);
-    
-    temp.flags = 0;
-    for( str = strtok( flags, ",\r\n" ); str; str = strtok(NULL, ",\r\n") )
-    {
-      for( i=0; i<NUM_FLAGS; i++ )
-      {
-        if( strcmp( tagflags[i].name, str ) == 0 )
-        {
-          temp.flags |= tagflags[i].flag;
-          break;
-        }
-      }
-      if( i == NUM_FLAGS )
-        fprintf( stderr, "Unknown flag '%s' line %d, ignored\n", str, lineno );
-    }
-    if (temp.flags==FLAG_PHSTORE) {
-        if (HSTORE_NONE==(Options->enable_hstore)) {
-            fprintf( stderr, "Error reading style file line %d (fields=%d)\n", lineno, fields );
-            fprintf( stderr, "flag 'phstore' is invalid in non-hstore mode\n");
-            exit_nicely();
-        }
-    }
-    if ((temp.flags!=FLAG_DELETE) && ((strchr(temp.name,'?') >0) || (strchr(temp.name,'*') >0))) {
-        fprintf( stderr, "wildcard '%s' in non-delete style emtry\n",temp.name);
-        exit_nicely();
-    }
-    
-    temp.count = 0;
-//    printf("%s %s %d %d\n", temp.name, temp.type, temp.polygon, offset );
-    
-    int flag = 0;
-    if( strstr( osmtype, "node" ) )
-    {
-      memcpy( &exportList[ OSMTYPE_NODE ][ exportListCount[ OSMTYPE_NODE ] ], &temp, sizeof(temp) );
-      exportListCount[ OSMTYPE_NODE ]++;
-      flag = 1;
-    }
-    if( strstr( osmtype, "way" ) )
-    {
-      memcpy( &exportList[ OSMTYPE_WAY ][ exportListCount[ OSMTYPE_WAY ] ], &temp, sizeof(temp) );
-      exportListCount[ OSMTYPE_WAY ]++;
-      flag = 1;
-    }
-    if( !flag )
-    {
-      fprintf( stderr, "Weird style line %d\n", lineno );
-      exit_nicely();
-    }
-    num_read++;
-  }
-  if (ferror(in)) {
-      perror(filename);
-      exit_nicely();
-  }
-  if (num_read == 0) {
-      fprintf(stderr, "Unable to parse any valid columns from the style file. Aborting.\n");
-      exit_nicely();
-  }
-  fclose(in);
-}
-
-static void free_style_refs(const char *name, const char *type)
-{
-    // Find and remove any other references to these pointers
-    // This would be way easier if we kept a single list of styles
-    // Currently this scales with n^2 number of styles
-    int i,j;
-
-    for (i=0; i<NUM_TABLES; i++) {
-        for(j=0; j<exportListCount[i]; j++) {
-            if (exportList[i][j].name == name)
-                exportList[i][j].name = NULL;
-            if (exportList[i][j].type == type)
-                exportList[i][j].type = NULL;
-        }
-    }
-}
-
-static void free_style(void)
-{
-    int i, j;
-    for (i=0; i<NUM_TABLES; i++) {
-        for(j=0; j<exportListCount[i]; j++) {
-            free(exportList[i][j].name);
-            free(exportList[i][j].type);
-            free_style_refs(exportList[i][j].name, exportList[i][j].type);
-        }
-    }
-    for (i=0; i<NUM_TABLES; i++)
-        free(exportList[i]);
-}
 
 /* Handles copying out, but coalesces the data into large chunks for
  * efficiency. PostgreSQL doesn't actually need this, but each time you send
@@ -307,112 +120,6 @@ void copy_to_table(enum table_id table, const char *sql)
 
     tables[table].buflen = buflen;
 }
-
-static int add_z_order(struct keyval *tags, int *roads)
-{
-    const char *layer   = getItem(tags, "layer");
-    const char *highway = getItem(tags, "highway");
-    const char *bridge  = getItem(tags, "bridge");
-    const char *tunnel  = getItem(tags, "tunnel");
-    const char *railway = getItem(tags, "railway");
-    const char *boundary= getItem(tags, "boundary");
-
-    int z_order = 0;
-    int l;
-    unsigned int i;
-    char z[13];
-
-    l = layer ? strtol(layer, NULL, 10) : 0;
-    z_order = 10 * l;
-    *roads = 0;
-
-    if (highway) {
-        for (i=0; i<nLayers; i++) {
-            if (!strcmp(layers[i].highway, highway)) {
-                z_order += layers[i].offset;
-                *roads   = layers[i].roads;
-                break;
-            }
-        }
-    }
-
-    if (railway && strlen(railway)) {
-        z_order += 5;
-        *roads = 1;
-    }
-    // Administrative boundaries are rendered at low zooms so we prefer to use the roads table
-    if (boundary && !strcmp(boundary, "administrative"))
-        *roads = 1;
-
-    if (bridge && (!strcmp(bridge, "true") || !strcmp(bridge, "yes") || !strcmp(bridge, "1")))
-        z_order += 10;
-
-    if (tunnel && (!strcmp(tunnel, "true") || !strcmp(tunnel, "yes") || !strcmp(tunnel, "1")))
-        z_order -= 10;
-
-    snprintf(z, sizeof(z), "%d", z_order);
-    addItem(tags, "z_order", z, 0);
-
-    return 0;
-}
-
-#if 0
-static void fix_motorway_shields(struct keyval *tags)
-{
-    const char *highway = getItem(tags, "highway");
-    const char *name    = getItem(tags, "name");
-    const char *ref     = getItem(tags, "ref");
-
-    /* The current mapnik style uses ref= for motorway shields but some roads just have name= */
-    if (!highway || strcmp(highway, "motorway"))
-        return;
-
-    if (name && !ref)
-        addItem(tags, "ref", name, 0);
-}
-#endif
-
-/* Append all alternate name:xx on to the name tag with space sepatators.
- * name= always comes first, the alternates are in no particular order
- * Note: A new line may be better but this does not work with Mapnik
- *
- *    <tag k="name" v="Ben Nevis" />
- *    <tag k="name:gd" v="Ben Nibheis" />
- * becomes:
- *    <tag k="name" v="Ben Nevis Ben Nibheis" />
- */
-void compress_tag_name(struct keyval *tags)
-{
-    const char *name = getItem(tags, "name");
-    struct keyval *name_ext = getMatches(tags, "name:");
-    struct keyval *p;
-    char out[2048];
-
-    if (!name_ext)
-        return;
-
-    out[0] = '\0';
-    if (name) {
-        strncat(out, name, sizeof(out)-1);
-        strncat(out, " ", sizeof(out)-1);
-    }
-    while((p = popItem(name_ext)) != NULL) {
-        /* Exclude name:source = "dicataphone" and duplicates */
-        if (strcmp(p->key, "name:source") && !strstr(out, p->value)) {
-            strncat(out, p->value, sizeof(out)-1);
-            strncat(out, " ", sizeof(out)-1);
-        }
-        freeItem(p);
-    }
-    free(name_ext);
-
-    // Remove trailing space
-    out[strlen(out)-1] = '\0';
-    //fprintf(stderr, "*** New name: %s\n", out);
-    updateItem(tags, "name", out);
-}
-
-
 
 static void pgsql_out_cleanup(void)
 {
@@ -739,21 +446,6 @@ static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum ta
     copy_to_table(table, sql);
     copy_to_table(table, wkt);
     copy_to_table(table, "\n");
-}
-
-static int tag_indicates_polygon(enum OsmType type, const char *key)
-{
-    int i;
-
-    if (!strcmp(key, "area"))
-        return 1;
-
-    for (i=0; i < exportListCount[type]; i++) {
-        if( strcmp( exportList[type][i].name, key ) == 0 )
-            return exportList[type][i].flags & FLAG_POLYGON;
-    }
-
-    return 0;
 }
 
 /* Go through the given tags and determine the union of flags. Also remove
@@ -1231,7 +923,7 @@ static int pgsql_out_start(const struct output_options *options)
 
     Options = options;
 
-    read_style_file( options->style );
+    read_style_file( options->style, options);
 
     sql_len = 2048;
     sql = malloc(sql_len);
