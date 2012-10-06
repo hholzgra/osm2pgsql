@@ -68,7 +68,9 @@ distclean-local:
 	@rm -f $(PACKAGE).spec
 	@rm -f config.nice
 
-testme: osm2pgsql
+test-pgsql: osm2pgsql
 	@./osm2pgsql -H 127.0.0.1 -U gisuser --style=./default.style sample.pbf
 	@psql -c "select count(*) from planet_osm_polygon;" gis gisuser
 
+test-mysql: osm2pgsql
+	@./osm2pgsql --output=mysql -H 127.0.0.1 -U gisuser --style=./default.style sample.pbf
