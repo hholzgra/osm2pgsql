@@ -8,10 +8,16 @@
 #include <mysql/mysql.h>
 
 #include "osmtypes.h"
+#include "reprojection.h"
 #include "output.h"
-#include "style-file.h"
 #include "output-helper.h"
 #include "output-mysql.h"
+#include "style-file.h"
+#include "build_geometry.h"
+
+/* FIXME */
+#define PGconn void
+#include "expire-tiles.h"
 
 #define UNUSED  __attribute__ ((unused))
 
@@ -102,6 +108,70 @@ static void escape_type(char *sql, int len, const char *value, const char *type)
   }
 }
 
+static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum table_id table)
+{
+  
+    static char *sql;
+    static size_t sqllen=0;
+    char *v;
+    int j;
+    struct keyval *tag;
+    char buffer[1024];
+
+    if (sqllen==0) {
+      sqllen=4096;
+      sql=malloc(sqllen);
+    }
+    
+    sprintf(sql, "INSERT INTO %s (%s,`way`) VALUES (%" PRIdOSMID, 
+	    tables[table].name, tables[table].columns, id);
+    
+    for (j=0; j < exportListCount[OSMTYPE_WAY]; j++) {
+      if( exportList[OSMTYPE_WAY][j].flags & FLAG_DELETE )
+	continue;
+      if( (exportList[OSMTYPE_WAY][j].flags & FLAG_PHSTORE) == FLAG_PHSTORE)
+	continue;
+      if ((tag = getTag(tags, exportList[OSMTYPE_WAY][j].name)))
+	{
+	  exportList[OSMTYPE_WAY][j].count++;
+	  escape_type(buffer, sizeof(buffer), tag->value, exportList[OSMTYPE_WAY][j].type);
+	  strcat(sql, ",");
+	  strcat(sql, buffer);
+	  /* FIXME
+	     if (HSTORE_NORM==Options->enable_hstore)
+	     tag->has_column=1;
+	  */
+	}
+      else
+	strcat(sql, ",NULL");
+    }
+    
+    /* FIXME
+    // hstore columns
+    write_hstore_columns(table, tags);
+    
+    // check if a regular hstore is requested
+    if (Options->enable_hstore)
+    write_hstore(table, tags);
+    */    
+    
+    strcat(sql, ",GeomFromText('");
+    if (strlen(sql) + strlen(wkt) +10 > sqllen) {
+      sqllen += strlen(wkt);
+      sqllen += sqllen;
+      sql = realloc(sql, sqllen);
+      if (!sql) {
+	fprintf(stderr, "realloc %ld failed - out of memory?\n", sqllen);
+	exit_nicely();
+      }
+    }
+    
+    strcat(sql, wkt);
+    strcat(sql, "'))");
+
+    mysql_exec(tables[table].sql_conn, sql);
+}
+
 static int mysql_out_node(osmid_t id, struct keyval *tags, double node_lat, double node_lon)
 {
     static char *sql;
@@ -116,8 +186,8 @@ static int mysql_out_node(osmid_t id, struct keyval *tags, double node_lat, doub
       sql=malloc(sqllen);
     }
 
-    /* FIXME expire_tiles_from_bbox(node_lon, node_lat, node_lon, node_lat); */
-    sprintf(sql, "INSERT INTO %s (%s,`way`) VALUES (%ld", tables[t_point].name, tables[t_point].columns, id);
+    expire_tiles_from_bbox(node_lon, node_lat, node_lon, node_lat); 
+    sprintf(sql, "INSERT INTO %s (%s,`way`) VALUES (%" PRIdOSMID, tables[t_point].name, tables[t_point].columns, id);
 
     for (i=0; i < exportListCount[OSMTYPE_NODE]; i++) {
         if( exportList[OSMTYPE_NODE][i].flags & FLAG_DELETE )
@@ -148,35 +218,426 @@ static int mysql_out_node(osmid_t id, struct keyval *tags, double node_lat, doub
     return 0;
 }
 
+
+/* Seperated out because we use it elsewhere */
+static int mysql_delete_way_from_output(osmid_t osm_id)
+{
+    /* Optimisation: we only need this is slim mode */
+    if( !Options->slim )
+        return 0;
+    /* in droptemp mode we don't have indices and this takes ages. */
+    if (Options->droptemp)
+        return 0;
+    mysql_exec(tables[t_roads].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_roads].name, osm_id );
+    /* FIXME if ( expire_tiles_from_db(tables[t_line].sql_conn, osm_id) != 0) */
+    mysql_exec(tables[t_line].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_line].name, osm_id );
+    /* FIXME if ( expire_tiles_from_db(tables[t_poly].sql_conn, osm_id) != 0) */
+    mysql_exec(tables[t_poly].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_poly].name, osm_id );
+    return 0;
+}
+
 static int mysql_out_way(osmid_t id, struct keyval *tags, struct osmNode *nodes, int count, int exists)
 {
-  /* FIXME */
-  exit(3);
+  int polygon = 0, roads = 0;
+  int i, wkt_size;
+  double split_at;
+  
+  /* If the flag says this object may exist already, delete it first */
+  if(exists) {
+    mysql_delete_way_from_output(id);
+    Options->mid->way_changed(id);
+  }
+
+  if (filter_tags(OSMTYPE_WAY, tags, &polygon, Options) || add_z_order(tags, &roads))
+    return 0;
+
+  // Split long ways after around 1 degree or 100km
+  if (Options->projection == PROJ_LATLONG)
+    split_at = 1;
+  else
+    split_at = 100 * 1000;
+  
+  wkt_size = get_wkt_split(nodes, count, polygon, split_at);
+  
+  for (i=0;i<wkt_size;i++) {
+    char *wkt = get_wkt(i);
+    
+    if (wkt && strlen(wkt)) {
+      /* FIXME: there should be a better way to detect polygons */
+      if (!strncmp(wkt, "POLYGON", strlen("POLYGON")) || !strncmp(wkt, "MULTIPOLYGON", strlen("MULTIPOLYGON"))) {
+	expire_tiles_from_nodes_poly(nodes, count, id);
+	double area = get_area(i);
+	if (area > 0.0) {
+	  char tmp[32];
+	  snprintf(tmp, sizeof(tmp), "%f", area);
+	  addItem(tags, "way_area", tmp, 0);
+	}
+	write_wkts(id, tags, wkt, t_poly);
+      } else {
+	expire_tiles_from_nodes_line(nodes, count);
+	write_wkts(id, tags, wkt, t_line);
+	if (roads)
+	  write_wkts(id, tags, wkt, t_roads);
+      }
+    }
+    free(wkt);
+  }
+  clear_wkts();
+  
+  return 0;
 }
 
 static int mysql_out_relation(osmid_t id, struct keyval *rel_tags, struct osmNode **xnodes, struct keyval *xtags, int *xcount, osmid_t *xid, const char **xrole)
 {
-  /* FIXME */
-  exit(3);
-}
+    int i, wkt_size;
+    int polygon = 0, roads = 0;
+    int make_polygon = 0;
+    int make_boundary = 0;
+    struct keyval tags, *p, poly_tags;
+    char *type;
+    double split_at;
 
-static int mysql_delete_way_from_output(osmid_t osm_id)
-{
-  /* FIXME */
-  exit(3);
+#if 0
+    fprintf(stderr, "Got relation with counts:");
+    for (i=0; xcount[i]; i++)
+        fprintf(stderr, " %d", xcount[i]);
+    fprintf(stderr, "\n");
+#endif
+    /* Get the type, if there's no type we don't care */
+    type = getItem(rel_tags, "type");
+    if( !type )
+        return 0;
+
+    initList(&tags);
+    initList(&poly_tags);
+
+    /* Clone tags from relation */
+    p = rel_tags->next;
+    while (p != rel_tags) {
+        // For routes, we convert name to route_name
+        if ((strcmp(type, "route") == 0) && (strcmp(p->key, "name") ==0))
+            addItem(&tags, "route_name", p->value, 1);
+        else if (strcmp(p->key, "type")) // drop type=
+            addItem(&tags, p->key, p->value, 1);
+        p = p->next;
+    }
+
+    if( strcmp(type, "route") == 0 )
+    {
+        const char *state = getItem(rel_tags, "state");
+        const char *netw = getItem(rel_tags, "network");
+        int networknr = -1;
+
+        if (state == NULL) {
+            state = "";
+        }
+
+        if (netw != NULL) {
+            if (strcmp(netw, "lcn") == 0) {
+                networknr = 10;
+                if (strcmp(state, "alternate") == 0) {
+                    addItem(&tags, "lcn", "alternate", 1);
+                } else if (strcmp(state, "connection") == 0) {
+                    addItem(&tags, "lcn", "connection", 1);
+                } else {
+                    addItem(&tags, "lcn", "yes", 1);
+                }
+            } else if (strcmp(netw, "rcn") == 0) {
+                networknr = 11;
+                if (strcmp(state, "alternate") == 0) {
+                    addItem(&tags, "rcn", "alternate", 1);
+                } else if (strcmp(state, "connection") == 0) {
+                    addItem(&tags, "rcn", "connection", 1);
+                } else {
+                    addItem(&tags, "rcn", "yes", 1);
+                }
+            } else if (strcmp(netw, "ncn") == 0) {
+                networknr = 12;
+                if (strcmp(state, "alternate") == 0) {
+                    addItem(&tags, "ncn", "alternate", 1);
+                } else if (strcmp(state, "connection") == 0) {
+                    addItem(&tags, "ncn", "connection", 1);
+                } else {
+                    addItem(&tags, "ncn", "yes", 1);
+                }
+
+
+            } else if (strcmp(netw, "lwn") == 0) {
+                networknr = 20;
+                if (strcmp(state, "alternate") == 0) {
+                    addItem(&tags, "lwn", "alternate", 1);
+                } else if (strcmp(state, "connection") == 0) {
+                    addItem(&tags, "lwn", "connection", 1);
+                } else {
+                    addItem(&tags, "lwn", "yes", 1);
+                }
+            } else if (strcmp(netw, "rwn") == 0) {
+                networknr = 21;
+                if (strcmp(state, "alternate") == 0) {
+                    addItem(&tags, "rwn", "alternate", 1);
+                } else if (strcmp(state, "connection") == 0) {
+                    addItem(&tags, "rwn", "connection", 1);
+                } else {
+                    addItem(&tags, "rwn", "yes", 1);
+                }
+            } else if (strcmp(netw, "nwn") == 0) {
+                networknr = 22;
+                if (strcmp(state, "alternate") == 0) {
+                    addItem(&tags, "nwn", "alternate", 1);
+                } else if (strcmp(state, "connection") == 0) {
+                    addItem(&tags, "nwn", "connection", 1);
+                } else {
+                    addItem(&tags, "nwn", "yes", 1);
+                }
+            }
+        }
+
+        if (getItem(rel_tags, "preferred_color") != NULL) {
+            const char *a = getItem(rel_tags, "preferred_color");
+            if (strcmp(a, "0") == 0 || strcmp(a, "1") == 0 || strcmp(a, "2") == 0 || strcmp(a, "3") == 0 || strcmp(a, "4") == 0) {
+                addItem(&tags, "route_pref_color", a, 1);
+            } else {
+                addItem(&tags, "route_pref_color", "0", 1);
+            }
+        } else {
+            addItem(&tags, "route_pref_color", "0", 1);
+        }
+
+        if (getItem(rel_tags, "ref") != NULL) {
+            if (networknr == 10) {
+                addItem(&tags, "lcn_ref", getItem(rel_tags, "ref"), 1);
+            } else if (networknr == 11) {
+                addItem(&tags, "rcn_ref", getItem(rel_tags, "ref"), 1);
+            } else if (networknr == 12) {
+                addItem(&tags, "ncn_ref", getItem(rel_tags, "ref"), 1);
+            } else if (networknr == 20) {
+                addItem(&tags, "lwn_ref", getItem(rel_tags, "ref"), 1);
+            } else if (networknr == 21) {
+                addItem(&tags, "rwn_ref", getItem(rel_tags, "ref"), 1);
+            } else if (networknr == 22) {
+                addItem(&tags, "nwn_ref", getItem(rel_tags, "ref"), 1);
+            }
+        }
+    }
+    else if( strcmp( type, "boundary" ) == 0 )
+    {
+        // Boundaries will get converted into multiple geometries:
+        // - Linear features will end up in the line and roads tables (useful for admin boundaries)
+        // - Polygon features also go into the polygon table (useful for national_forests)
+        // The edges of the polygon also get treated as linear fetaures allowing these to be rendered seperately.
+        make_boundary = 1;
+    }
+    else if( strcmp( type, "multipolygon" ) == 0 && getItem(&tags, "boundary") )
+    {
+        // Treat type=multipolygon exactly like type=boundary if it has a boundary tag.
+        make_boundary = 1;
+    }
+    else if( strcmp( type, "multipolygon" ) == 0 )
+    {
+        make_polygon = 1;
+
+        /* Copy the tags from the outer way(s) if the relation is untagged */
+        /* or if there is just a name tag, people seem to like naming relations */
+        if (!listHasData(&tags) || ((countList(&tags)==1) && getItem(&tags, "name"))) {
+            for (i=0; xcount[i]; i++) {
+                if (xrole[i] && !strcmp(xrole[i], "inner"))
+                    continue;
+
+                p = xtags[i].next;
+                while (p != &(xtags[i])) {
+                    addItem(&tags, p->key, p->value, 1);
+                    p = p->next;
+                }
+            }
+        }
+
+        // Collect a list of polygon-like tags, these are used later to
+        // identify if an inner rings looks like it should be rendered seperately
+        p = tags.next;
+        while (p != &tags) {
+            if (tag_indicates_polygon(OSMTYPE_WAY, p->key)) {
+                addItem(&poly_tags, p->key, p->value, 1);
+                //fprintf(stderr, "found a polygon tag: %s=%s\n", p->key, p->value);
+            }
+            p = p->next;
+        }
+    }
+    else
+    {
+        /* Unknown type, just exit */
+        resetList(&tags);
+        resetList(&poly_tags);
+        return 0;
+    }
+
+    if (filter_tags(OSMTYPE_WAY, &tags, &polygon, Options) || add_z_order(&tags, &roads)) {
+        resetList(&tags);
+        resetList(&poly_tags);
+        return 0;
+    }
+
+    // Split long linear ways after around 1 degree or 100km (polygons not effected)
+    if (Options->projection == PROJ_LATLONG)
+        split_at = 1;
+    else
+        split_at = 100 * 1000;
+
+    wkt_size = build_geometry(id, xnodes, xcount, make_polygon, Options->enable_multi, split_at);
+
+    if (!wkt_size) {
+        resetList(&tags);
+        resetList(&poly_tags);
+        return 0;
+    }
+
+    for (i=0;i<wkt_size;i++)
+    {
+        char *wkt = get_wkt(i);
+
+        if (wkt && strlen(wkt)) {
+            expire_tiles_from_wkt(wkt, -id);
+            /* FIXME: there should be a better way to detect polygons */
+            if (!strncmp(wkt, "POLYGON", strlen("POLYGON")) || !strncmp(wkt, "MULTIPOLYGON", strlen("MULTIPOLYGON"))) {
+                double area = get_area(i);
+                if (area > 0.0) {
+                    char tmp[32];
+                    snprintf(tmp, sizeof(tmp), "%f", area);
+                    addItem(&tags, "way_area", tmp, 0);
+                }
+                write_wkts(-id, &tags, wkt, t_poly);
+            } else {
+                write_wkts(-id, &tags, wkt, t_line);
+                if (roads)
+                    write_wkts(-id, &tags, wkt, t_roads);
+            }
+        }
+        free(wkt);
+    }
+
+    clear_wkts();
+
+    // If we are creating a multipolygon then we
+    // mark each member so that we can skip them during iterate_ways
+    // but only if the polygon-tags look the same as the outer ring
+    if (make_polygon) {
+        for (i=0; xcount[i]; i++) {
+            int match = 0;
+            struct keyval *p = poly_tags.next;
+            while (p != &poly_tags) {
+                const char *v = getItem(&xtags[i], p->key);
+                //fprintf(stderr, "compare polygon tag: %s=%s vs %s\n", p->key, p->value, v ? v : "null");
+                if (!v || strcmp(v, p->value)) {
+                    match = 0;
+                    break;
+                }
+                match = 1;
+                p = p->next;
+            }
+            if (match) {
+                //fprintf(stderr, "match for %d\n", xid[i]);
+                Options->mid->ways_done(xid[i]);
+                mysql_delete_way_from_output(xid[i]);
+            }
+        }
+    }
+
+    // If we are making a boundary then also try adding any relations which form complete rings
+    // The linear variants will have already been processed above
+    if (make_boundary) {
+        wkt_size = build_geometry(id, xnodes, xcount, 1, Options->enable_multi, split_at);
+        for (i=0;i<wkt_size;i++)
+        {
+            char *wkt = get_wkt(i);
+
+            if (strlen(wkt)) {
+                expire_tiles_from_wkt(wkt, -id);
+                /* FIXME: there should be a better way to detect polygons */
+                if (!strncmp(wkt, "POLYGON", strlen("POLYGON")) || !strncmp(wkt, "MULTIPOLYGON", strlen("MULTIPOLYGON"))) {
+                    double area = get_area(i);
+                    if (area > 0.0) {
+                        char tmp[32];
+                        snprintf(tmp, sizeof(tmp), "%f", area);
+                        addItem(&tags, "way_area", tmp, 0);
+                    }
+                    write_wkts(-id, &tags, wkt, t_poly);
+                }
+            }
+            free(wkt);
+        }
+        clear_wkts();
+    }
+
+    resetList(&tags);
+    resetList(&poly_tags);
+    return 0;
 }
 
 static int mysql_delete_relation_from_output(osmid_t osm_id)
 {
-  /* FIXME */
-  exit(3);
+  mysql_exec(tables[t_roads].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_roads].name, -osm_id );
+  /* FIXME if ( expire_tiles_from_db(tables[t_line].sql_conn, -osm_id) != 0) */
+  mysql_exec(tables[t_line].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_line].name, -osm_id );
+  /* if ( expire_tiles_from_db(tables[t_poly].sql_conn, -osm_id) != 0) */
+  mysql_exec(tables[t_poly].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_poly].name, -osm_id );
+  return 0;
 }
 
 
 static int mysql_process_relation(osmid_t id, struct member *members, int member_count, struct keyval *tags, int exists)
 {
-  /* FIXME */
-  exit(3);
+  // (osmid_t id, struct keyval *rel_tags, struct osmNode **xnodes, struct keyval **xtags, int *xcount)
+    int i, j, count, count2;
+  osmid_t *xid2 = malloc( (member_count+1) * sizeof(osmid_t) );
+  osmid_t *xid;
+  const char **xrole = malloc( (member_count+1) * sizeof(const char *) );
+  int *xcount = malloc( (member_count+1) * sizeof(int) );
+  struct keyval *xtags  = malloc( (member_count+1) * sizeof(struct keyval) );
+  struct osmNode **xnodes = malloc( (member_count+1) * sizeof(struct osmNode*) );
+
+  /* If the flag says this object may exist already, delete it first */
+  if(exists)
+      mysql_delete_relation_from_output(id);
+
+  count = 0;
+  for( i=0; i<member_count; i++ )
+  {
+  
+    /* Need to handle more than just ways... */
+    if( members[i].type != OSMTYPE_WAY )
+        continue;
+    xid2[count] = members[i].id;
+    count++;
+  }
+
+  count2 = Options->mid->ways_get_list(xid2, count, &xid, xtags, xnodes, xcount);
+
+  for (i = 0; i < count2; i++) {
+      for (j = i; j < member_count; j++) {
+          if (members[j].id == xid[i]) break;
+      }
+      xrole[i] = members[j].role;
+  }
+  xnodes[count2] = NULL;
+  xcount[count2] = 0;
+  xid[count2] = 0;
+  xrole[count2] = NULL;
+
+  // At some point we might want to consider storing the retreived data in the members, rather than as seperate arrays
+  mysql_out_relation(id, tags, xnodes, xtags, xcount, xid, xrole);
+
+  for( i=0; i<count2; i++ )
+  {
+    resetList( &(xtags[i]) );
+    free( xnodes[i] );
+  }
+
+  free(xid2);
+  free(xid);
+  free(xrole);
+  free(xcount);
+  free(xtags);
+  free(xnodes);
+  return 0;
 }
 
 static void mysql_out_commit(void) {
@@ -190,13 +651,14 @@ static void mysql_out_commit(void) {
 static void mysql_out_cleanup(void) 
 {
   int i;
-  
+
   for (i=0; i<NUM_TABLES; i++) {
     if (tables[i].sql_conn) {
       mysql_close(tables[i].sql_conn);
       tables[i].sql_conn = NULL;
     }
   }
+  fprintf(stderr, "mysql_out_cleanup end\n");
 }
 
 static int mysql_out_start(const struct output_options *options) 
@@ -313,7 +775,7 @@ static int mysql_out_start(const struct output_options *options)
 
   free(sql);
 
-  /* FIXME expire_tiles_init(options); */
+  expire_tiles_init(options);
   
   options->mid->start(options);
 
@@ -348,6 +810,7 @@ static void mysql_out_stop() {
   for (i=0; i<NUM_TABLES; i++) {
     /* TODO: OPTIMIZE/ANALYZE TABLE here? */
     mysql_close(tables[i].sql_conn);
+    tables[i].sql_conn = NULL;
     free(tables[i].name);
     free(tables[i].columns);
   }
@@ -355,7 +818,7 @@ static void mysql_out_stop() {
   mysql_out_cleanup();
   free_style();
   
-  /* FIXME expire_tiles_stop(); */
+  expire_tiles_stop();
 }
 
 static int mysql_out_connect(const struct output_options *options, int startTransaction) {
@@ -433,7 +896,7 @@ static int mysql_delete_node(osmid_t osm_id)
   /* FIXME
      if ( expire_tiles_from_db(tables[t_point].sql_conn, osm_id) != 0)
   */
-  mysql_exec(tables[t_point].sql_conn, "DELETE FROM %s WHERE osm_id = %", tables[t_point].name, osm_id );
+  mysql_exec(tables[t_point].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_point].name, osm_id );
   
   Options->mid->nodes_delete(osm_id);
   return 0;

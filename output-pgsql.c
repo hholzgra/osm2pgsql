@@ -23,8 +23,8 @@
 #include <libpq-fe.h>
 
 #include "osmtypes.h"
-#include "output.h"
 #include "reprojection.h"
+#include "output.h"
 #include "output-pgsql.h"
 #include "build_geometry.h"
 #include "middle.h"
