@@ -112,7 +112,7 @@ static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum ta
 {
   
     static char *sql;
-    static size_t sqllen=0;
+    static size_t sqllen=0, needed;
     char *v;
     int j;
     struct keyval *tag;
@@ -156,9 +156,9 @@ static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum ta
     */    
     
     strcat(sql, ",GeomFromText('");
-    if (strlen(sql) + strlen(wkt) +10 > sqllen) {
-      sqllen += strlen(wkt);
-      sqllen += sqllen;
+    needed = strlen(sql) + strlen(wkt) +10; 
+    if (needed > sqllen) {
+      sqllen = needed;
       sql = realloc(sql, sqllen);
       if (!sql) {
 	fprintf(stderr, "realloc %ld failed - out of memory?\n", sqllen);
@@ -664,7 +664,7 @@ static void mysql_out_cleanup(void)
 static int mysql_out_start(const struct output_options *options) 
 {
   char *sql, tmp[256];
-  unsigned int sql_len;
+  size_t sql_len;
   int i, j;
   Options = options;
 
@@ -693,10 +693,6 @@ static int mysql_out_start(const struct output_options *options)
 
     mysql_exec(sql_conn, "SET NAMES utf8");
 
-    /* FIXME: needs SUPER privs 
-       mysql_exec(sql_conn, "set global innodb_flush_log_at_trx_commit=0";
-    */
-    
     fprintf(stderr, "Setting up table: %s\n", tables[i].name);
     
     if (!options->append) {
@@ -712,6 +708,8 @@ static int mysql_out_start(const struct output_options *options)
     struct taginfo *exportTags = exportList[type];
     
     if (!options->append) {
+      size_t needed;
+
       sprintf(sql, "CREATE TABLE %s ( osm_id BIGINT", tables[i].name );
       for (j=0; j < numTags; j++) {
 	if( exportTags[j].flags & FLAG_DELETE )
@@ -719,10 +717,14 @@ static int mysql_out_start(const struct output_options *options)
 	if( (exportTags[j].flags & FLAG_PHSTORE ) == FLAG_PHSTORE)
 	  continue;
 	sprintf(tmp, ",`%s` %s", exportTags[j].name, exportTags[j].type);
-	if (strlen(sql) + strlen(tmp) + 1 > sql_len) {
-	  sql_len *= 2;
+	needed = strlen(sql) + strlen(tmp) + 10;
+	if (needed > sql_len) {
+	  sql_len = needed;
 	  sql = realloc(sql, sql_len);
-	  assert(sql);
+	  if (!sql) {
+	    fprintf(stderr, "realloc %ld failed - out of memory?\n", sqllen);
+	    exit_nicely();
+	  }
 	}
 	strcat(sql, tmp);
       }
@@ -966,7 +968,8 @@ static int mysql_exec(MYSQL *sql_conn, const char *fmt, ...)
 {
   va_list ap;
   char *sql, *nsql;
-  int n, res, size = 1000;
+  int n, res;
+  size_t size = 1000;
   MYSQL_RES *result;
 
   if ((sql = malloc(size)) == NULL) {
