@@ -44,7 +44,8 @@ static struct s_table {
 };
 #define NUM_TABLES ((signed)(sizeof(tables) / sizeof(tables[0])))
 
-static int mysql_exec(MYSQL *sql_conn, const char *fmt, ...);
+static int mysql_exec(MYSQL *sql_conn, const char *sql);
+static int mysql_vexec(MYSQL *sql_conn, const char *fmt, ...);
 
 /* Escape data appropriate to the type */
 static void escape_type(char *sql, int len, const char *value, const char *type) {
@@ -228,11 +229,11 @@ static int mysql_delete_way_from_output(osmid_t osm_id)
     /* in droptemp mode we don't have indices and this takes ages. */
     if (Options->droptemp)
         return 0;
-    mysql_exec(tables[t_roads].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_roads].name, osm_id );
+    mysql_vexec(tables[t_roads].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_roads].name, osm_id );
     /* FIXME if ( expire_tiles_from_db(tables[t_line].sql_conn, osm_id) != 0) */
-    mysql_exec(tables[t_line].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_line].name, osm_id );
+    mysql_vexec(tables[t_line].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_line].name, osm_id );
     /* FIXME if ( expire_tiles_from_db(tables[t_poly].sql_conn, osm_id) != 0) */
-    mysql_exec(tables[t_poly].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_poly].name, osm_id );
+    mysql_vexec(tables[t_poly].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_poly].name, osm_id );
     return 0;
 }
 
@@ -574,11 +575,11 @@ static int mysql_out_relation(osmid_t id, struct keyval *rel_tags, struct osmNod
 
 static int mysql_delete_relation_from_output(osmid_t osm_id)
 {
-  mysql_exec(tables[t_roads].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_roads].name, -osm_id );
+  mysql_vexec(tables[t_roads].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_roads].name, -osm_id );
   /* FIXME if ( expire_tiles_from_db(tables[t_line].sql_conn, -osm_id) != 0) */
-  mysql_exec(tables[t_line].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_line].name, -osm_id );
+  mysql_vexec(tables[t_line].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_line].name, -osm_id );
   /* if ( expire_tiles_from_db(tables[t_poly].sql_conn, -osm_id) != 0) */
-  mysql_exec(tables[t_poly].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_poly].name, -osm_id );
+  mysql_vexec(tables[t_poly].sql_conn, "DELETE FROM %s WHERE osm_id = %" PRIdOSMID, tables[t_poly].name, -osm_id );
   return 0;
 }
 
@@ -696,8 +697,8 @@ static int mysql_out_start(const struct output_options *options)
     fprintf(stderr, "Setting up table: %s\n", tables[i].name);
     
     if (!options->append) {
-      mysql_exec(sql_conn, "DROP TABLE IF EXISTS %s", tables[i].name);
-      mysql_exec(sql_conn, "DROP TABLE IF EXISTS %s_tmp", tables[i].name);
+      mysql_vexec(sql_conn, "DROP TABLE IF EXISTS %s", tables[i].name);
+      mysql_vexec(sql_conn, "DROP TABLE IF EXISTS %s_tmp", tables[i].name);
     } else { /* append */
       fprintf(stderr, "output-mysql doesn't support --append yet\n");
       exit_nicely();      
@@ -722,7 +723,7 @@ static int mysql_out_start(const struct output_options *options)
 	  sql_len = needed;
 	  sql = realloc(sql, sql_len);
 	  if (!sql) {
-	    fprintf(stderr, "realloc %ld failed - out of memory?\n", sqllen);
+	    fprintf(stderr, "realloc %ld failed - out of memory?\n", sql_len);
 	    exit_nicely();
 	  }
 	}
@@ -898,7 +899,7 @@ static int mysql_delete_node(osmid_t osm_id)
   /* FIXME
      if ( expire_tiles_from_db(tables[t_point].sql_conn, osm_id) != 0)
   */
-  mysql_exec(tables[t_point].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_point].name, osm_id );
+  mysql_vexec(tables[t_point].sql_conn, "DELETE FROM %s WHERE osm_id = %"PRIdOSMID, tables[t_point].name, osm_id );
   
   Options->mid->nodes_delete(osm_id);
   return 0;
@@ -964,13 +965,34 @@ static int mysql_modify_relation(osmid_t osm_id, struct member *members, int mem
   return 0;
 }
 
-static int mysql_exec(MYSQL *sql_conn, const char *fmt, ...)
+static int mysql_exec(MYSQL *sql_conn, const char *sql)
+{
+  int res;
+  MYSQL_RES *result;
+
+#ifdef DEBUG_MYSQL
+  fprintf( stderr, "Executing: %s\n", sql );
+#endif
+  res = mysql_query(sql_conn, sql);
+  if (res) {
+    fprintf(stderr, "%s failed: %s\n", sql, mysql_error(sql_conn));
+    exit_nicely();
+  }
+
+  result = mysql_store_result(sql_conn);  
+  if (result) {
+    mysql_free_result(result);
+  }
+
+  return 0;
+}
+
+static int mysql_vexec(MYSQL *sql_conn, const char *fmt, ...)
 {
   va_list ap;
   char *sql, *nsql;
   int n, res;
   size_t size = 1000;
-  MYSQL_RES *result;
 
   if ((sql = malloc(size)) == NULL) {
     fprintf(stderr, "Memory allocation failed\n");
@@ -999,23 +1021,11 @@ static int mysql_exec(MYSQL *sql_conn, const char *fmt, ...)
     }
   }
 
-#ifdef DEBUG_MYSQL
-  fprintf( stderr, "Executing: %s\n", sql );
-#endif
-  res = mysql_query(sql_conn, sql);
-  if (res) {
-    fprintf(stderr, "%s failed: %s\n", sql, mysql_error(sql_conn));
-    free(sql);
-    exit_nicely();
-  }
+  res = mysql_exec(sql_conn, sql);
+  
   free(sql);
 
-  result = mysql_store_result(sql_conn);  
-  if (result) {
-    mysql_free_result(result);
-  }
-
-  return 0;
+  return res;
 }
 
 struct output_t out_mysql = {
