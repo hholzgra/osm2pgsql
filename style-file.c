@@ -25,6 +25,16 @@ void read_style_file( const char *filename, const struct output_options *Options
   FILE *in;
   int lineno = 0;
   int num_read = 0;
+  char osmtype[24];
+  char tag[64];
+  char datatype[24];
+  char flags[128];
+  int i;
+  char *str;
+  int fields;
+  struct taginfo temp;
+  char buffer[1024];
+  int flag = 0;
 
   exportList[OSMTYPE_NODE] = malloc( sizeof(struct taginfo) * MAX_STYLES );
   exportList[OSMTYPE_WAY]  = malloc( sizeof(struct taginfo) * MAX_STYLES );
@@ -36,23 +46,15 @@ void read_style_file( const char *filename, const struct output_options *Options
     exit_nicely();
   }
   
-  char buffer[1024];
   while( fgets( buffer, sizeof(buffer), in) != NULL )
   {
     lineno++;
     
-    char osmtype[24];
-    char tag[64];
-    char datatype[24];
-    char flags[128];
-    int i;
-    char *str;
-
     str = strchr( buffer, '#' );
     if( str )
       *str = '\0';
       
-    int fields = sscanf( buffer, "%23s %63s %23s %127s", osmtype, tag, datatype, flags );
+    fields = sscanf( buffer, "%23s %63s %23s %127s", osmtype, tag, datatype, flags );
     if( fields <= 0 )  /* Blank line */
       continue;
     if( fields < 3 )
@@ -60,7 +62,6 @@ void read_style_file( const char *filename, const struct output_options *Options
       fprintf( stderr, "Error reading style file line %d (fields=%d)\n", lineno, fields );
       exit_nicely();
     }
-    struct taginfo temp;
     temp.name = strdup(tag);
     temp.type = strdup(datatype);
     
@@ -85,15 +86,14 @@ void read_style_file( const char *filename, const struct output_options *Options
             exit_nicely();
         }
     }
-    if ((temp.flags!=FLAG_DELETE) && ((strchr(temp.name,'?') >0) || (strchr(temp.name,'*') >0))) {
-        fprintf( stderr, "wildcard '%s' in non-delete style emtry\n",temp.name);
+    if ((temp.flags!=FLAG_DELETE) && ((strchr(temp.name,'?') != NULL) || (strchr(temp.name,'*') >0))) {
+        fprintf( stderr, "wildcard '%s' in non-delete style entry\n",temp.name);
         exit_nicely();
     }
     
     temp.count = 0;
-//    printf("%s %s %d %d\n", temp.name, temp.type, temp.polygon, offset );
+    /*    printf("%s %s %d %d\n", temp.name, temp.type, temp.polygon, offset ); */
     
-    int flag = 0;
     if( strstr( osmtype, "node" ) )
     {
       memcpy( &exportList[ OSMTYPE_NODE ][ exportListCount[ OSMTYPE_NODE ] ], &temp, sizeof(temp) );
@@ -126,9 +126,9 @@ void read_style_file( const char *filename, const struct output_options *Options
 
 void free_style_refs(const char *name, const char *type)
 {
-    // Find and remove any other references to these pointers
-    // This would be way easier if we kept a single list of styles
-    // Currently this scales with n^2 number of styles
+    /* Find and remove any other references to these pointers
+       This would be way easier if we kept a single list of styles
+       Currently this scales with n^2 number of styles */
     int i,j;
 
     for (i=0; i<NUM_TABLES; i++) {
@@ -228,7 +228,14 @@ unsigned int filter_tags(enum OsmType type, struct keyval *tags, int *polygon, c
                 pushItem(&temp, item);
                 /* ... but if hstore_match_only is set then don't take this 
                    as a reason for keeping the object */
-                if (!Options->hstore_match_only) filter = 0;
+                if (
+                    !Options->hstore_match_only
+                    && strcmp("osm_uid",item->key)
+                    && strcmp("osm_user",item->key)
+                    && strcmp("osm_timestamp",item->key)
+                    && strcmp("osm_version",item->key)
+                    && strcmp("osm_changeset",item->key)
+                   ) filter = 0;
             } else if (Options->n_hstore_columns) {
                 /* does this column match any of the hstore column prefixes? */
                 int j;
@@ -238,7 +245,14 @@ unsigned int filter_tags(enum OsmType type, struct keyval *tags, int *polygon, c
                         pushItem(&temp, item);
                         /* ... but if hstore_match_only is set then don't take this 
                            as a reason for keeping the object */
-                        if (!Options->hstore_match_only) filter = 0;
+                        if (
+                            !Options->hstore_match_only
+                            && strcmp("osm_uid",item->key)
+                            && strcmp("osm_user",item->key)
+                            && strcmp("osm_timestamp",item->key)
+                            && strcmp("osm_version",item->key)
+                            && strcmp("osm_changeset",item->key)
+                          ) filter = 0;
                         break; 
                     }
                 }

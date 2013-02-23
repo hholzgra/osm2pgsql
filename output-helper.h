@@ -21,7 +21,6 @@ static struct {
     { 3, "residential",   0 },
     { 4, "tertiary_link", 0 },
     { 4, "tertiary",      0 },
-   // 5 = railway
     { 6, "secondary_link",1 },
     { 6, "secondary",     1 },
     { 7, "primary_link",  1 },

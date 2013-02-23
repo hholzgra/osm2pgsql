@@ -19,11 +19,6 @@
 
 
 
-
-static int scale = 100;
-#define DOUBLE_TO_FIX(x) ((int)((x) * scale))
-#define FIX_TO_DOUBLE(x) (((double)x) / scale)
-
 /* Here we use a similar storage structure as middle-ram, except we allow
  * the array to be lossy so we can cap the total memory usage. Hence it is a
  * combination of a sparse array with a priority queue
@@ -93,23 +88,23 @@ static int warn_node_order;
 
 static int ram_cache_nodes_get_sparse(struct osmNode *out, osmid_t id);
 
-static inline int id2block(osmid_t id)
+static int id2block(osmid_t id)
 {
-    // + NUM_BLOCKS/2 allows for negative IDs
+    /* + NUM_BLOCKS/2 allows for negative IDs */
     return (id >> BLOCK_SHIFT) + NUM_BLOCKS/2;
 }
 
-static inline int id2offset(osmid_t id)
+static int id2offset(osmid_t id)
 {
     return id & (PER_BLOCK-1);
 }
 
-static inline osmid_t block2id(int block, int offset)
+static osmid_t block2id(int block, int offset)
 {
     return (((osmid_t) block - NUM_BLOCKS/2) << BLOCK_SHIFT) + (osmid_t) offset;
 }
 
-#define Swap(a,b) { typeof(a) __tmp = a; a = b; b = __tmp; }
+#define Swap(a,b) { struct ramNodeBlock * __tmp = a; a = b; b = __tmp; }
 
 static void percolate_up( int pos )
 {
@@ -119,7 +114,7 @@ static void percolate_up( int pos )
       int parent = (i-1)>>1;
       if( queue[i]->used < queue[parent]->used )
       {
-        Swap( queue[i], queue[parent] );
+        Swap( queue[i], queue[parent] )
         i = parent;
       }
       else
@@ -239,7 +234,7 @@ static int ram_cache_nodes_set_dense(osmid_t id, double lat, double lon, struct 
              * current head of the tree down to the right level to restore the
              * priority queue invariant. Upto log(maxBlocks) iterations */
             
-            int i=0;
+            i=0;
             while( 2*i+1 < usedBlocks - 1 ) {
                 if( queue[2*i+1]->used <= queue[2*i+2]->used ) {
                     if( queue[i]->used > queue[2*i+1]->used ) {
@@ -371,7 +366,7 @@ void init_node_ram_cache( int strategy, int cacheSizeMB, int fixpointscale ) {
             fprintf(stderr, "Out of memory for node cache dense index, try using \"--cache-strategy sparse\" instead \n");
             exit_nicely();
         }
-        queue = calloc( maxBlocks,sizeof(struct ramNodeBlock) );
+        queue = calloc( maxBlocks,sizeof(struct ramNodeBlock *) );
         /* Use this method of allocation if virtual memory is limited,
          * or if OS allocs physical memory right away, rather than page by page
          * once it is needed.

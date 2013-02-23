@@ -44,7 +44,7 @@ int add_z_order(struct keyval *tags, int *roads)
         z_order += 5;
         *roads = 1;
     }
-    // Administrative boundaries are rendered at low zooms so we prefer to use the roads table
+    /* Administrative boundaries are rendered at low zooms so we prefer to use the roads table */
     if (boundary && !strcmp(boundary, "administrative"))
         *roads = 1;
 
@@ -94,9 +94,9 @@ void compress_tag_name(struct keyval *tags)
     }
     free(name_ext);
 
-    // Remove trailing space
+    /* Remove trailing space */
     out[strlen(out)-1] = '\0';
-    //fprintf(stderr, "*** New name: %s\n", out);
+    /* fprintf(stderr, "*** New name: %s\n", out); */
     updateItem(tags, "name", out);
 }
 

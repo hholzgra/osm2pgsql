@@ -24,7 +24,7 @@ AC_HEADER_SYS_WAIT
 AC_FUNC_MMAP
 
 dnl Find C compiler
-AC_PROG_CC_C99
+dnl AC_PROG_CC_C99
 
 dnl Find C++ compiler
 AC_PROG_CXX
@@ -34,17 +34,27 @@ then
   AC_MSG_ERROR([Could not find a c++ compiler]);
 fi
 
+dnl AX_CFLAGS_WARN_ALL
+dnl AX_CXXFLAGS_WARN_ALL
+
 dnl Make sure we have libtool installed
 AM_PROG_LIBTOOL
 
+LFS_CFLAGS=`getconf LFS_CFLAGS`
+AC_SUBST(LFS_CFLAGS)
+
 AC_CHECK_FUNC(lseek64,[AC_DEFINE(HAVE_LSEEK64, [1], [lseek64 is present])],[AX_COMPILE_CHECK_SIZEOF(off_t)])
-AC_CHECK_FUNCS([posix_fallocate posix_fadvise sync_file_range])
+AC_CHECK_FUNCS([posix_fallocate posix_fadvise sync_file_range fork])
 
 
 dnl legacy 32bit ID mode
 AC_ARG_ENABLE([64bit-ids],
     AS_HELP_STRING([--disable-64bit-ids], [Disable 64bit IDs for OSM IDs]), 
-    [], [ AC_DEFINE(OSMID64, [1], [Enable 64bit OSM IDs])])
+    [ if test "$enableval" = "yes"
+      then
+        AC_DEFINE(OSMID64, [1], [Enable 64bit OSM IDs])
+      fi
+    ], [ AC_DEFINE(OSMID64, [1], [Enable 64bit OSM IDs])])
 
 
 dnl Check for libxml2 library
