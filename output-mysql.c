@@ -2,7 +2,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #include <assert.h>
 #include <errno.h>
 #include <mysql/mysql.h>
@@ -14,6 +13,8 @@
 #include "output-mysql.h"
 #include "style-file.h"
 #include "build_geometry.h"
+
+#include "mysql.h"
 
 /* FIXME */
 #define PGconn void
@@ -43,9 +44,6 @@ static struct s_table {
   { .name = "%s_roads",   .type = "LINESTRING"}
 };
 #define NUM_TABLES ((signed)(sizeof(tables) / sizeof(tables[0])))
-
-static int mysql_exec(MYSQL *sql_conn, const char *sql);
-static int mysql_vexec(MYSQL *sql_conn, const char *fmt, ...);
 
 /* Escape data appropriate to the type */
 static void escape_type(char *sql, int len, const char *value, const char *type) {
@@ -679,7 +677,8 @@ static int mysql_out_start(const struct output_options *options)
     MYSQL *sql_conn = mysql_init(NULL);
     
     if (NULL == mysql_real_connect(sql_conn, options->conn.host, options->conn.username, options->conn.password, options->conn.db, 3306 /* FIXME */, NULL, 0)) {
-      fprintf(stderr, "mysql connect failed: host %s:, db %s, user: %s, pwd: %s\n", options->conn.host, options->conn.db, options->conn.username, options->conn.password);
+      fprintf(stderr, "mysql connect failed: host %s:, db %s, user: %s\n", options->conn.host, options->conn.db, options->conn.username);
+      exit_nicely();
     } else {
       fprintf(stderr, "mysql connect succeeded\n");
     }
@@ -965,68 +964,6 @@ static int mysql_modify_relation(osmid_t osm_id, struct member *members, int mem
   return 0;
 }
 
-static int mysql_exec(MYSQL *sql_conn, const char *sql)
-{
-  int res;
-  MYSQL_RES *result;
-
-#ifdef DEBUG_MYSQL
-  fprintf( stderr, "Executing: %s\n", sql );
-#endif
-  res = mysql_query(sql_conn, sql);
-  if (res) {
-    fprintf(stderr, "%s failed: %s\n", sql, mysql_error(sql_conn));
-    exit_nicely();
-  }
-
-  result = mysql_store_result(sql_conn);  
-  if (result) {
-    mysql_free_result(result);
-  }
-
-  return 0;
-}
-
-static int mysql_vexec(MYSQL *sql_conn, const char *fmt, ...)
-{
-  va_list ap;
-  char *sql, *nsql;
-  int n, res;
-  size_t size = 1000;
-
-  if ((sql = malloc(size)) == NULL) {
-    fprintf(stderr, "Memory allocation failed\n");
-    exit_nicely();
-  }
-
-  while (1) {
-    /* Try to print in the allocated space. */
-    va_start(ap, fmt);
-    n = vsnprintf(sql, size, fmt, ap);
-    va_end(ap);
-    /* If that worked, return the string. */
-    if (n > -1 && n < size)
-      break;
-    /* Else try again with more space. */
-    if (n > -1)    /* glibc 2.1 */
-      size = n+1; /* precisely what is needed */
-    else           /* glibc 2.0 */
-      size *= 2;  /* twice the old size */
-    if ((nsql = realloc (sql, size)) == NULL) {
-      free(sql);
-      fprintf(stderr, "Memory re-allocation failed\n");
-      exit_nicely();
-    } else {
-      sql = nsql;
-    }
-  }
-
-  res = mysql_exec(sql_conn, sql);
-  
-  free(sql);
-
-  return res;
-}
 
 struct output_t out_mysql = {
  .start           = mysql_out_start,

@@ -37,7 +37,7 @@ BUILT_SOURCES = \
 endif
 
 if HAVE_MYSQL
-osm2pgsql_SOURCES += output-mysql.c output-mysql.h
+osm2pgsql_SOURCES += mysql.c mysql.h output-mysql.c output-mysql.h middle-mysql.c middle-mysql.h
 endif
 
 osm2pgsqldir = $(datadir)/osm2pgsql
