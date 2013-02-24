@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include <mysql/mysql.h>
 #include "mysql.h"
@@ -159,6 +160,9 @@ static char *escape_tag( char *ptr, const char *in, int escape )
   return ptr;
 }
 
+
+
+
 /* escape means we return '\N' for copy mode, otherwise we return just NULL */
 static char *mysql_store_tags(struct keyval *tags, int escape)
 {
@@ -217,6 +221,57 @@ _restart:
   return buffer;
 }
 
+
+/* Decodes a portion of an array literal from postgres */
+/* Argument should point to beginning of literal, on return points to delimiter */
+static const char *decode_upto( const char *src, char *dst )
+{
+  int quoted = (*src == '"');
+  if( quoted ) src++;
+  
+  while( quoted ? (*src != '"') : (*src != ',' && *src != '}') )
+  {
+    if( *src == '\\' )
+    {
+      switch( src[1] )
+      {
+        case 'n': *dst++ = '\n'; break;
+        case 't': *dst++ = '\t'; break;
+        default: *dst++ = src[1]; break;
+      }
+      src+=2;
+    }
+    else
+      *dst++ = *src++;
+  }
+  if( quoted ) src++;
+  *dst = 0;
+  return src;
+}
+
+static void mysql_parse_tags( const char *string, struct keyval *tags )
+{
+  char key[1024];
+  char val[1024];
+  
+  if( *string == '\0' )
+    return;
+    
+  if( *string++ != '{' )
+    return;
+  while( *string != '}' )
+  {
+    string = decode_upto( string, key );
+    /* String points to the comma */
+    string++;
+    string = decode_upto( string, val );
+    /* String points to the comma or closing '}' */
+    addItem( tags, key, val, 0 );
+    if( *string == ',' )
+      string++;
+  }
+}
+
 static int my_nodes_set(osmid_t id, double lat, double lon, struct keyval *tags) 
 {
   mysql_vexec(&sql_conn, "INSERT INTO %s_nodes SET id = %" PRIdOSMID ", lat = %.0f, lon = %.0f, tags = '%s'", my_options->prefix, id, lat, lon, mysql_store_tags(tags, 0));
@@ -224,8 +279,60 @@ static int my_nodes_set(osmid_t id, double lat, double lon, struct keyval *tags)
   return 0;
 }
 
-static int my_nodes_get_list(struct osmNode *out, osmid_t *nds, int nd_count)
+static int my_nodes_get_list(struct osmNode *nodes, osmid_t *node_ids, int node_count)
 {
+  int n, i;
+  char *query, *p;
+  long count = 0, count_db = 0, count_query = 0;
+  MYSQL_RES *result;
+  osmid_t *query_nodeids, *p_nodeid;
+  struct osmNode *query_nodes, *p_node;
+  MYSQL_ROW row;
+
+  query = (char *)malloc(100 + node_count * 15); // big enough for sure
+  n = sprintf(query, "SELECT id, lat, lon FROM %s_nodes WHERE id IN (", my_options->prefix);
+  p = query + n;
+
+  for (i = 0; i < node_count; i++) {
+    /* Check cache first */ 
+    if( ram_cache_nodes_get( &nodes[i], node_ids[i]) == 0 ) {
+      count++;
+      continue;
+    }
+
+    count_db++;
+
+    /* Mark nodes as needing to be fetched from the DB */
+    nodes[i].lat = NAN;
+    nodes[i].lon = NAN;
+
+    // add node id to query string
+    p += sprintf(p, " %" PRIdOSMID ",", node_ids[i]);
+  }
+
+  // replace the last ',' in the query with ')'
+  *p = '\0';
+  --p;
+  *p = ')';
+
+  if ( 0 != mysql_query(&sql_conn, query)) {
+    fprintf(stderr, "query error: %s\n", mysql_error(&sql_conn));
+    exit_nicely();
+  }
+
+  result = mysql_store_result(&sql_conn);
+
+  count_query = (long)mysql_num_rows(result);
+
+  query_nodeids = p_nodeid = (osmid_t*)calloc(count_query, sizeof(osmid_t));
+  query_nodes = p_node = (struct osmNode *)calloc(count_query, sizeof(struct osmNode));
+  /* FIXME: error handling */
+  
+  while ((row = mysql_fetch_row(result))) {
+  }
+
+  mysql_free_result(result);
+  
   return 0;
 }
 

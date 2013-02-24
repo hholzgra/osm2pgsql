@@ -32,7 +32,7 @@
 #endif
 #endif
 #endif 
-
+ /*failed to allocate memory, return */
 #include <libpq-fe.h>
 
 #include "osmtypes.h"
