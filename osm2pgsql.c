@@ -47,6 +47,7 @@
 #include "output-pgsql.h"
 #include "pgsql.h"
 #ifdef HAVE_MYSQL
+#include "middle-mysql.h"
 #include "output-mysql.h"
 #endif
 #include "output-gazetteer.h"
@@ -629,6 +630,9 @@ int main(int argc, char *argv[])
 #ifdef HAVE_MYSQL
     } else if (strcmp("mysql", output_backend) == 0) {
       osmdata.out = &out_mysql;
+      if (slim) {
+	options.mid = &mid_mysql;
+      }
 #endif
     } else if (strcmp("null", output_backend) == 0) {
       osmdata.out = &out_null;
