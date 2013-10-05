@@ -7,7 +7,8 @@ AC_PREREQ(2.61)
 AX_CONFIG_NICE
 
 dnl use automake to generate standard Makefiles
-AM_INIT_AUTOMAKE([1.9.6 dist-bzip2 std-options check-news])
+dnl should also use std-options and check-news? (disabled for now)
+AM_INIT_AUTOMAKE([1.9.6 dist-bzip2])
 
 dnl use 'silent' make rules by default (disabled for now)
 dnl AM_INIT_AUTOMAKE([1.11 dist-bzip2 silent-rules])
