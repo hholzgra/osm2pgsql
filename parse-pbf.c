@@ -55,6 +55,7 @@ static uint32_t get_length(FILE *input)
   return ntohl(*((size_t *)buf));
 }
 
+#if 0
 static void *realloc_or_free(void *p, size_t len)
 {
   void *new = realloc(p, len);
@@ -65,6 +66,7 @@ static void *realloc_or_free(void *p, size_t len)
 
   return new;
 }
+#endif
 
 static BlockHeader *read_header(FILE *input, void *buf)
 {    
@@ -309,7 +311,7 @@ int processOsmDataDenseNodes(struct osmdata_t *osmdata, PrimitiveGroup *group, S
     unsigned node_id;
     if (group->dense) {
         unsigned l = 0;
-        long int deltaid = 0;
+        osmid_t deltaid = 0;
         long int deltalat = 0;
         long int deltalon = 0;
         unsigned long int deltatimestamp = 0;
@@ -338,15 +340,13 @@ int processOsmDataDenseNodes(struct osmdata_t *osmdata, PrimitiveGroup *group, S
                 addIntItem(&(osmdata->tags), "osm_version", denseinfo->version[node_id], 0);
                 addIntItem(&(osmdata->tags), "osm_changeset", deltachangeset, 0);
                 
-#if 0
-                /* TODO */
                 if (deltauid != -1) { /* osmosis devs failed to read the specs */
-                    printuser(string_table->s[deltauser_sid]);
-                    printnumericattribute("osm_uid", deltauid);
+                    char * valstr;
+                    addIntItem(&(osmdata->tags), "osm_uid", deltauid, 0);
+                    valstr = calloc(string_table->s[deltauser_sid].len + 1, 1);
+                    memcpy(valstr, string_table->s[deltauser_sid].data, string_table->s[deltauser_sid].len);
+                    addItem(&(osmdata->tags), "osm_user", valstr,  0);
                 }
-                
-                printtimestamp("osm_timestamp", deltatimestamp);
-#endif
             }
             
             if (l < dense->n_keys_vals) {
@@ -390,7 +390,7 @@ int processOsmDataWays(struct osmdata_t *osmdata, PrimitiveGroup *group, StringT
     unsigned way_id, key_id, ref_id;
   for (way_id = 0; way_id < group->n_ways; way_id++) {
     Way *way = group->ways[way_id];
-    long int deltaref = 0;
+    osmid_t deltaref = 0;
 
     resetList(&(osmdata->tags));
 
@@ -441,7 +441,7 @@ int processOsmDataRelations(struct osmdata_t *osmdata, PrimitiveGroup *group, St
     unsigned rel_id, member_id, key_id;
   for (rel_id = 0; rel_id < group->n_relations; rel_id++) {
     Relation *relation = group->relations[rel_id];
-    long int deltamemids = 0;
+    osmid_t deltamemids = 0;
 
     resetList(&(osmdata->tags));
 
