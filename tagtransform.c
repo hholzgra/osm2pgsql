@@ -1,3 +1,4 @@
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,7 +7,6 @@
 #include "keyvals.h"
 #include "tagtransform.h"
 #include "output-pgsql.h"
-#include "config.h"
 #include "wildcmp.h"
 
 #ifdef HAVE_LUA

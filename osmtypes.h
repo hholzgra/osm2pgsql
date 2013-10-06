@@ -5,7 +5,6 @@
 
 #include <inttypes.h>
 #include <time.h>
-#include <config.h>
 
 /* Use ./configure --enable-64bit-ids to build a version that supports 64bit IDs. */
 
