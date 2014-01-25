@@ -1,5 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT(osm2pgsql, 0.81.0)
+AC_INIT(osm2pgsql, 0.83.0)
 
 dnl Required autoconf version
 AC_PREREQ(2.61)
@@ -7,7 +7,8 @@ AC_PREREQ(2.61)
 AX_CONFIG_NICE
 
 dnl use automake to generate standard Makefiles
-AM_INIT_AUTOMAKE([1.9.6 dist-bzip2 std-options check-news])
+dnl should also use std-options and check-news? (disabled for now)
+AM_INIT_AUTOMAKE([1.9.6 dist-bzip2])
 
 dnl use 'silent' make rules by default (disabled for now)
 dnl AM_INIT_AUTOMAKE([1.11 dist-bzip2 silent-rules])
@@ -99,7 +100,7 @@ dnl Decide whether to include PBF import support
 BUILD_READER_PBF=no
 if test "$HAVE_PROTOBUF_C" = "yes"
 then
-  if test "$PROTOC_C" != "false" -o -f $srcdir/fileformat.pb-c.c
+  if test "$PROTOC_C" != "false"
   then
     BUILD_READER_PBF=yes
     AC_DEFINE([BUILD_READER_PBF], [1], [Requirements for building the PBF reader are met])
@@ -121,7 +122,35 @@ AM_CONDITIONAL([HAVE_MYSQL], [test "x$MYSQL_VERSION" != "x"])
 dnl Check for pthread library
 AX_PTHREAD(,[AC_MSG_ERROR([no])])
 
+AX_PROG_LUA([5.0],[],[
+    AX_LUA_HEADERS([
+        AX_LUA_LIBS([
+            AC_DEFINE([HAVE_LUA], [1], [Requirements for lua are met])
+            HAVE_LUA=yes
+        ],[AC_MSG_WARN([cannot find Lua libs])])
+    ],[AC_MSG_WARN([cannot find Lua includes])])
+],[AC_MSG_WARN([cannot find Lua interpreter])])
 
 dnl Generate Makefile
-AC_OUTPUT(Makefile legacy/Makefile)
+AC_OUTPUT(Makefile)
+
+if test "$BUILD_READER_PBF" != "yes"
+then
+    AC_MSG_WARN([
+protobuf libraries not found. You will NOT be able to import PBF files.
+
+To enable PBF support, the protobuf library and compiler are required. 
+Look for packages named: libprotobuf-c0-dev protobuf-c-compiler
+])
+fi
+
+if test "$HAVE_LUA" != "yes"
+then
+    AC_MSG_WARN([
+lua libraries not found. You will NOT be able to use lua scripts for tag transform.
+
+To enable lua support, the lua interpreter and libraries are required. 
+Look for packages named: lua5.2 liblua5.2-dev
+])
+fi
 

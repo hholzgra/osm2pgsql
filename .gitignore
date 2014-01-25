@@ -1,10 +1,11 @@
-\#*
-\.#*
 *.o
 *~
-.deps
+.deps/
+INSTALL
 Makefile
 Makefile.in
+\#*
+\.#*
 aclocal.m4
 autom4te.cache/
 config.guess
@@ -20,6 +21,9 @@ depcomp
 fileformat.pb-c.c
 fileformat.pb-c.h
 install-sh
+legacy/.deps/
+legacy/Makefile
+legacy/Makefile.in
 libtool
 log
 ltmain.sh

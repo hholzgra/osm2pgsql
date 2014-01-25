@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <math.h>
 #include <time.h>
+#include <errno.h>
 
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
@@ -84,8 +85,8 @@ static struct table_desc tables [] = {
       .prepare = "PREPARE insert_node (" POSTGRES_OSMID_TYPE ", double precision, double precision, text[]) AS INSERT INTO %p_nodes VALUES ($1,$2,$3,$4);\n"
 #endif
                "PREPARE get_node (" POSTGRES_OSMID_TYPE ") AS SELECT lat,lon,tags FROM %p_nodes WHERE id = $1 LIMIT 1;\n"
+               "PREPARE get_node_list(" POSTGRES_OSMID_TYPE "[]) AS SELECT id, lat, lon FROM %p_nodes WHERE id = ANY($1::" POSTGRES_OSMID_TYPE "[])",
                "PREPARE delete_node (" POSTGRES_OSMID_TYPE ") AS DELETE FROM %p_nodes WHERE id = $1;\n",
-.prepare_intarray = "PREPARE get_node_list(" POSTGRES_OSMID_TYPE "[]) AS SELECT id, lat, lon FROM %p_nodes WHERE id = ANY($1::" POSTGRES_OSMID_TYPE "[])",
          .copy = "COPY %p_nodes FROM STDIN;\n",
       .analyze = "ANALYZE %p_nodes;\n",
          .stop = "COMMIT;\n"
@@ -103,7 +104,8 @@ static struct table_desc tables [] = {
                "PREPARE way_done(" POSTGRES_OSMID_TYPE ") AS UPDATE %p_ways SET pending = false WHERE id = $1;\n"
                "PREPARE pending_ways AS SELECT id FROM %p_ways WHERE pending;\n"
                "PREPARE delete_way(" POSTGRES_OSMID_TYPE ") AS DELETE FROM %p_ways WHERE id = $1;\n",
-.prepare_intarray = "PREPARE node_changed_mark(" POSTGRES_OSMID_TYPE ") AS UPDATE %p_ways SET pending = true WHERE nodes && ARRAY[$1] AND NOT pending;\n",
+.prepare_intarray = "PREPARE node_changed_mark(" POSTGRES_OSMID_TYPE ") AS UPDATE %p_ways SET pending = true WHERE nodes && ARRAY[$1] AND NOT pending;\n"
+               "PREPARE rel_delete_mark(" POSTGRES_OSMID_TYPE ") AS UPDATE %p_ways SET pending = true WHERE id IN (SELECT unnest(parts[way_off+1:rel_off]) FROM %p_rels WHERE id = $1) AND NOT pending;\n",
          .copy = "COPY %p_ways FROM STDIN;\n",
       .analyze = "ANALYZE %p_ways;\n",
          .stop =  "COMMIT;\n"
@@ -462,6 +464,7 @@ static int middle_nodes_set(osmid_t id, double lat, double lon, struct keyval *t
 }
 
 
+#if 0
 static int pgsql_nodes_get(struct osmNode *out, osmid_t id)
 {
     PGresult   *res;
@@ -492,6 +495,7 @@ static int pgsql_nodes_get(struct osmNode *out, osmid_t id)
     PQclear(res);
     return 0;
 }
+#endif
 
 /* Currently not used 
 static int middle_nodes_get(struct osmNode *out, osmid_t id)
@@ -867,9 +871,9 @@ static void pgsql_iterate_ways(int (*callback)(osmid_t id, struct keyval *tags, 
         if (pid==-1) {
 #if HAVE_MMAP
             info[p].finished = HELPER_STATE_FAILED;
-            fprintf(stderr,"WARNING: Failed to fork helper processes %i. Trying to recover.\n", p);
+            fprintf(stderr,"WARNING: Failed to fork helper process %i: %s. Trying to recover.\n", p, strerror(errno));
 #else
-            fprintf(stderr,"ERROR: Failed to fork helper processes. Can't recover! \n");
+            fprintf(stderr,"ERROR: Failed to fork helper process %i: %s. Can't recover!\n", p, strerror(errno));
             exit_nicely();
 #endif            
         }
@@ -1207,10 +1211,12 @@ static int pgsql_rels_delete(osmid_t osm_id)
     char const *paramValues[1];
     char buffer[64];
     /* Make sure we're out of copy mode */
+    pgsql_endCopy( way_table );
     pgsql_endCopy( rel_table );
     
     sprintf( buffer, "%" PRIdOSMID, osm_id );
     paramValues[0] = buffer;
+    pgsql_execPrepared(way_table->sql_conn, "rel_delete_mark", 1, paramValues, PGRES_COMMAND_OK );
     pgsql_execPrepared(rel_table->sql_conn, "delete_rel", 1, paramValues, PGRES_COMMAND_OK );
     return 0;
 }
@@ -1672,7 +1678,7 @@ static int pgsql_start(const struct output_options *options)
             pgsql_exec(sql_conn, PGRES_COMMAND_OK, "%s", tables[i].prepare);
         }
 
-        if (tables[i].prepare_intarray) {
+        if (Append && tables[i].prepare_intarray) {
             pgsql_exec(sql_conn, PGRES_COMMAND_OK, "%s", tables[i].prepare_intarray);
         }
 
