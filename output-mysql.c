@@ -109,13 +109,18 @@ static void escape_type(char *sql, int len, const char *value, const char *type)
 
 static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum table_id table)
 {
-  
     static char *sql;
     static size_t sqllen=0, needed;
-    char *v;
     int j;
     struct keyval *tag;
     char buffer[1024];
+
+    // MySQL doesn't allow NULL values in spatial indexes
+    // TODO: do we have to deal with MULTI* geometries where only some 
+    //       of the elements are EMPTY?
+    if (strstr(wkt, "EMPTY")) {
+      return;
+    }
 
     if (sqllen==0) {
       sqllen=4096;
@@ -175,7 +180,6 @@ static int mysql_out_node(osmid_t id, struct keyval *tags, double node_lat, doub
 {
     static char *sql;
     static size_t sqllen=0;
-    char *v;
     int i;
     struct keyval *tag;
     char buffer[1024];
@@ -665,6 +669,7 @@ static int mysql_out_start(const struct output_options *options)
   char *sql, tmp[256];
   size_t sql_len;
   int i, j;
+  MYSQL_PARAMETERS *mysql_params;
   Options = options;
 
   read_style_file( options->style, options);
@@ -673,15 +678,16 @@ static int mysql_out_start(const struct output_options *options)
   sql = malloc(sql_len);
   assert(sql);
 
+  mysql_params= mysql_get_parameters();
+  *mysql_params->p_max_allowed_packet= 67108864; // 64MB
+
   for (i=0; i<NUM_TABLES; i++) {
     MYSQL *sql_conn = mysql_init(NULL);
     
     if (NULL == mysql_real_connect(sql_conn, options->conn.host, options->conn.username, options->conn.password, options->conn.db, 3306 /* FIXME */, NULL, 0)) {
       fprintf(stderr, "mysql connect failed: host %s:, db %s, user: %s\n", options->conn.host, options->conn.db, options->conn.username);
       exit_nicely();
-    } else {
-      fprintf(stderr, "mysql connect succeeded\n");
-    }
+    } 
     tables[i].sql_conn = sql_conn;
 
     /* Substitute prefix into name of table */
