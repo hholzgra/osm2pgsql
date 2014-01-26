@@ -35,6 +35,9 @@ m4/lt~obsolete.m4
 missing
 nodecachefilereader
 osm2pgsql
+osm2pgsql.spec
+osm2pgsql-*.tar.gz
+osm2pgsql-*.tar.bz2
 osmformat.pb-c.c
 osmformat.pb-c.h
 stamp-h1
