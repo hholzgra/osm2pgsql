@@ -7,6 +7,8 @@
 
 #include <mysql/mysql.h>
 #include "mysql.h"
+#include "osmtypes.h"
+
 
 int mysql_exec(MYSQL *sql_conn, const char *sql)
 {
