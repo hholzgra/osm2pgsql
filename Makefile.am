@@ -2,13 +2,51 @@ ACLOCAL_AMFLAGS = -I m4
 
 bin_PROGRAMS = osm2pgsql nodecachefilereader
 
-osm2pgsql_SOURCES = build_geometry.cpp input.c middle.h middle-ram.h output-gazetteer.h output-pgsql.c rb.c sanitizer.h text-tree.h build_geometry.h input.h middle-pgsql.c osm2pgsql.c output.h output-pgsql.h rb.h sprompt.c UTF8sanitizer.c expire-tiles.c keyvals.c middle-pgsql.h osmtypes.h output-null.c parse-o5m.c parse-o5m.h parse-primitive.c parse-primitive.h parse-xml2.c parse-xml2.h pgsql.c reprojection.c sprompt.h expire-tiles.h keyvals.h middle-ram.c output-gazetteer.c output-null.h pgsql.h reprojection.h text-tree.c node-ram-cache.c wildcmp.c wildcmp.h node-ram-cache.h node-persistent-cache.c node-persistent-cache.h binarysearcharray.c binarysearcharray.h style-file.c style-file.h output-helper.c output-helper.h tagtransform.c tagtransform.h
+osm2pgsql_SOURCES = \
+  osm2pgsql.c \
+  UTF8sanitizer.c \
+  binarysearcharray.c binarysearcharray.h \
+  build_geometry.cpp build_geometry.h \
+  expire-tiles.c expire-tiles.h \
+  input.c input.h \
+  keyvals.c keyvals.h \
+  middle-pgsql.c middle-pgsql.h \
+  middle-ram.c middle-ram.h \
+  middle.h \
+  node-persistent-cache.c node-persistent-cache.h \
+  node-ram-cache.c node-ram-cache.h \
+  osmtypes.h \
+  output-gazetteer.c output-gazetteer.h \
+  output-helper.c output-helper.h \
+  output-null.c output-null.h \
+  pgsql.h \
+  output-pgsql.c output-pgsql.h \
+  output.h \
+  parse-o5m.c parse-o5m.h \
+  parse-primitive.c parse-primitive.h \
+  parse-xml2.c parse-xml2.h \
+  pgsql.c \
+  rb.c rb.h \
+  reprojection.c reprojection.h \
+  sanitizer.h \
+  sprompt.c sprompt.h \
+  style-file.c style-file.h \
+  tagtransform.c tagtransform.h\
+  text-tree.c text-tree.h \
+  wildcmp.c wildcmp.h 
 
-nodecachefilereader_SOURCES = node-persistent-cache-reader.c node-persistent-cache.c node-ram-cache.c binarysearcharray.c
+nodecachefilereader_SOURCES = \
+  binarysearcharray.c \
+  node-persistent-cache.c \
+  node-persistent-cache-reader.c \
+  node-ram-cache.c 
 
 
 if READER_PBF
-osm2pgsql_SOURCES += parse-pbf.c parse-pbf.h fileformat.pb-c.c fileformat.pb-c.h osmformat.pb-c.c osmformat.pb-c.h
+osm2pgsql_SOURCES += \
+  fileformat.pb-c.c fileformat.pb-c.h \
+  osmformat.pb-c.c osmformat.pb-c.h\
+  parse-pbf.c parse-pbf.h 
 
 fileformat.pb-c.c: protobuf/fileformat.proto
 	 $(AM_V_GEN) $(PROTOC_C) --proto_path=protobuf --c_out=. $<
@@ -35,7 +73,10 @@ BUILT_SOURCES = \
 endif
 
 if HAVE_MYSQL
-osm2pgsql_SOURCES += mysql.c mysql.h output-mysql.c output-mysql.h middle-mysql.c middle-mysql.h
+osm2pgsql_SOURCES += \
+  middle-mysql.c middle-mysql.h \
+  mysql.c mysql.h \
+  output-mysql.c output-mysql.h 
 endif
 
 osm2pgsqldir = $(datadir)/osm2pgsql
