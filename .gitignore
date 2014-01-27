@@ -17,6 +17,7 @@ config.status
 config.sub
 configure
 core
+core.[0-9]*
 depcomp
 fileformat.pb-c.c
 fileformat.pb-c.h
@@ -41,3 +42,4 @@ osm2pgsql-*.tar.bz2
 osmformat.pb-c.c
 osmformat.pb-c.h
 stamp-h1
+vgcore.[0-9]*
