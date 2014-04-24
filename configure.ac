@@ -8,11 +8,8 @@ AX_CONFIG_NICE
 
 dnl use automake to generate standard Makefiles
 dnl should also use std-options and check-news? (disabled for now)
-AM_INIT_AUTOMAKE([1.9.6 dist-bzip2])
-
-dnl use 'silent' make rules by default (disabled for now)
-dnl AM_INIT_AUTOMAKE([1.11 dist-bzip2 silent-rules])
-dnl AM_SILENT_RULES([yes])
+AM_INIT_AUTOMAKE([1.11 dist-bzip2 silent-rules])
+AM_SILENT_RULES([yes])
 
 dnl Additional macro definitions are in here
 AC_CONFIG_MACRO_DIR([m4])
@@ -116,8 +113,10 @@ then
 fi
 
 dnl Check for MySQL client library (optional)
+echo "========================================"
 AX_LIB_MYSQL
 AM_CONDITIONAL([HAVE_MYSQL], [test "x$MYSQL_VERSION" != "x"])
+echo "========================================"
 
 dnl Check for pthread library
 AX_PTHREAD(,[AC_MSG_ERROR([no])])

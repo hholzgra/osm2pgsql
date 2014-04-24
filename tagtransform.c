@@ -5,7 +5,7 @@
 #include "osmtypes.h"
 #include "keyvals.h"
 #include "tagtransform.h"
-#include "output-pgsql.h"
+#include "style-file.h"
 #include "config.h"
 #include "wildcmp.h"
 

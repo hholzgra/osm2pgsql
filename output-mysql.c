@@ -37,6 +37,7 @@ static struct s_table {
   char buffer[1024];
   unsigned int buflen;
   char *columns;
+  char **column_names;
 } tables [] = {
   { .name = "%s_point",   .type = "POINT"     },
   { .name = "%s_line",    .type = "LINESTRING"},
@@ -46,29 +47,30 @@ static struct s_table {
 #define NUM_TABLES ((signed)(sizeof(tables) / sizeof(tables[0])))
 
 /* Escape data appropriate to the type */
-static void escape_type(char *sql, int len, const char *value, const char *type) {
+static int escape_type(char *sql, int len, const char *value, const char *type) {
   int items;
   static int tmplen=0;
-  static char *tmpstr;
-
-  if (len > tmplen) {
-    tmpstr=realloc(tmpstr,len);
-    tmplen=len;
-  }
-  strcpy(tmpstr,value);
+  static char *tmpstr=NULL;
 
   if ( !strcmp(type, "int4") ) {
     int from, to; 
     /* For integers we take the first number, or the average if it's a-b */
     items = sscanf(value, "%d-%d", &from, &to);
     if ( items == 1 ) {
-      sprintf(sql, "%d", from);
+      return sprintf(sql, "%d", from);
     } else if ( items == 2 ) {
-      sprintf(sql, "%d", (from + to) / 2);
+      return sprintf(sql, "%d", (from + to) / 2);
     } else {
-      sprintf(sql, "NULL");
+      strcpy(sql, "NULL");
+      return 4;
     }
   } else {
+    if (len > tmplen) {
+      tmpstr=realloc(tmpstr,len);
+      tmplen=len;
+    }
+    strcpy(tmpstr,value);
+    
     /*
     try to "repair" real values as follows:
       * assume "," to be a decimal mark which need to be replaced by "."
@@ -89,31 +91,38 @@ static void escape_type(char *sql, int len, const char *value, const char *type)
 	if ((tmpstr[slen-2]=='f') && (tmpstr[slen-1]=='t')) {
 	  from*=0.3048;
 	}
-	sprintf(sql, "%f", from);
+	return sprintf(sql, "%f", from);
       } else if ( items == 2 ) {
 	if ((tmpstr[slen-2]=='f') && (tmpstr[slen-1]=='t')) {
 	  from*=0.3048;
 	  to*=0.3048;
 	}
-	sprintf(sql, "%f", (from + to) / 2);
+	return sprintf(sql, "%f", (from + to) / 2);
       } else {
-	sprintf(sql, "NULL");
+	strcpy(sql, "NULL");
+	return 4;
       }
     } else {
-      *sql = '\'';
-      mysql_escape_string(sql+1, value, strlen(value));
-      strcat(sql, "'");
+      int tmp_len;
+
+      *sql++ = '\''; 
+      tmp_len = mysql_escape_string(sql, value, strlen(value));
+      sql += tmp_len;
+      *sql++ = '\'';
+
+      return tmp_len + 2;
     }
   }
+
+  return 0;
 }
 
 static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum table_id table)
 {
-    static char *sql;
+    static char *sql, *p;
     static size_t sqllen=0, needed;
-    int j;
+    int i, j, len, tmp_len;
     struct keyval *tag;
-    char buffer[1024];
 
     // MySQL doesn't allow NULL values in spatial indexes
     // TODO: do we have to deal with MULTI* geometries where only some 
@@ -127,9 +136,30 @@ static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum ta
       sql=malloc(sqllen);
     }
     
-    sprintf(sql, "INSERT INTO %s (%s,`way`) VALUES (%" PRIdOSMID, 
-	    tables[table].name, tables[table].columns, id);
-    
+    len = sprintf(sql, "INSERT DELAYED INTO %s (osm_id", tables[table].name);
+    p = sql + len;
+
+    for (i=0; i < exportListCount[OSMTYPE_WAY]; i++) {
+        if( exportList[OSMTYPE_WAY][i].flags & FLAG_DELETE )
+            continue;
+        if( (exportList[OSMTYPE_WAY][i].flags & FLAG_PHSTORE) == FLAG_PHSTORE)
+            continue;
+        if ((tag = getTag(tags, exportList[OSMTYPE_WAY][i].name)))
+	{
+	  *p++ = ',';
+	  *p++ = '`';
+	  strcpy(p, tables[table].column_names[i]);
+	  tmp_len = strlen(tables[table].column_names[i]);
+	  len += tmp_len + 3;
+	  p+= tmp_len;
+	  *p++ = '`';
+	}
+    }
+
+    tmp_len = sprintf(p, ",way) VALUES (%" PRIdOSMID, id);
+    p+= tmp_len;
+    len += tmp_len;
+
     for (j=0; j < exportListCount[OSMTYPE_WAY]; j++) {
       if( exportList[OSMTYPE_WAY][j].flags & FLAG_DELETE )
 	continue;
@@ -138,16 +168,15 @@ static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum ta
       if ((tag = getTag(tags, exportList[OSMTYPE_WAY][j].name)))
 	{
 	  exportList[OSMTYPE_WAY][j].count++;
-	  escape_type(buffer, sizeof(buffer), tag->value, exportList[OSMTYPE_WAY][j].type);
-	  strcat(sql, ",");
-	  strcat(sql, buffer);
+	  *p++ = ','; len++;
+	  tmp_len = escape_type(p, sqllen - len, tag->value, exportList[OSMTYPE_WAY][j].type);
+	  p+= tmp_len;
+	  len += tmp_len;
 	  /* FIXME
 	     if (HSTORE_NORM==Options->enable_hstore)
 	     tag->has_column=1;
 	  */
 	}
-      else
-	strcat(sql, ",NULL");
     }
     
     /* FIXME
@@ -158,9 +187,12 @@ static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum ta
     if (Options->enable_hstore)
     write_hstore(table, tags);
     */    
-    
-    strcat(sql, ",GeomFromText('");
-    needed = strlen(sql) + strlen(wkt) +10; 
+
+    strcpy(p, ",GeomFromText('");
+    p += 15;
+    len += 15;
+    tmp_len = strlen(wkt);
+    needed = len + tmp_len +10; 
     if (needed > sqllen) {
       sqllen = needed;
       sql = realloc(sql, sqllen);
@@ -168,19 +200,22 @@ static void write_wkts(osmid_t id, struct keyval *tags, const char *wkt, enum ta
 	fprintf(stderr, "realloc %ld failed - out of memory?\n", sqllen);
 	exit_nicely();
       }
+      p = sql + len;
     }
     
-    strcat(sql, wkt);
-    strcat(sql, "'))");
+    strcpy(p, wkt);
+    len += tmp_len;
+    p += tmp_len;
+    strcpy(p, "'))\0");
 
     mysql_exec(tables[table].sql_conn, sql);
 }
 
 static int mysql_out_node(osmid_t id, struct keyval *tags, double node_lat, double node_lon)
 {
-    static char *sql;
+    static char *sql, *p;
     static size_t sqllen=0;
-    int i;
+    int i, len, tmp_len;
     struct keyval *tag;
     char buffer[1024];
 
@@ -190,7 +225,9 @@ static int mysql_out_node(osmid_t id, struct keyval *tags, double node_lat, doub
     }
 
     expire_tiles_from_bbox(node_lon, node_lat, node_lon, node_lat); 
-    sprintf(sql, "INSERT INTO %s (%s,`way`) VALUES (%" PRIdOSMID, tables[t_point].name, tables[t_point].columns, id);
+
+    len = sprintf(sql, "INSERT DELAYED INTO %s (osm_id", tables[t_point].name);
+    p = sql + len;
 
     for (i=0; i < exportListCount[OSMTYPE_NODE]; i++) {
         if( exportList[OSMTYPE_NODE][i].flags & FLAG_DELETE )
@@ -198,21 +235,41 @@ static int mysql_out_node(osmid_t id, struct keyval *tags, double node_lat, doub
         if( (exportList[OSMTYPE_NODE][i].flags & FLAG_PHSTORE) == FLAG_PHSTORE)
             continue;
         if ((tag = getTag(tags, exportList[OSMTYPE_NODE][i].name)))
-        {
-	  escape_type(buffer, sizeof(buffer), tag->value, exportList[OSMTYPE_NODE][i].type);
-	  strcat(sql, ",");
-	  strcat(sql, buffer);
+	{
+	  *p++ = ',';
+	  *p++ = '`';
+	  strcpy(p, tables[t_point].column_names[i]);
+	  p+= strlen(tables[t_point].column_names[i]);
+	  *p++ = '`';
+	}
+    }
+
+    tmp_len = sprintf(p, ",way) VALUES (%" PRIdOSMID, id);
+    p+= tmp_len;
+
+    for (i=0; i < exportListCount[OSMTYPE_NODE]; i++) {
+        if( exportList[OSMTYPE_NODE][i].flags & FLAG_DELETE )
+            continue;
+        if( (exportList[OSMTYPE_NODE][i].flags & FLAG_PHSTORE) == FLAG_PHSTORE)
+            continue;
+        if ((tag = getTag(tags, exportList[OSMTYPE_NODE][i].name)))
+	{
+	  *p++ = ',';
+	  tmp_len = escape_type(p, sqllen - len, tag->value, exportList[OSMTYPE_NODE][i].type);
+	  p += tmp_len;
+	  len += tmp_len + 1;
+
 	  exportList[OSMTYPE_NODE][i].count++;
 	  /* FIXME 
 	  if (HSTORE_NORM==Options->enable_hstore)
 	    tag->has_column=1;
 	  */
         }
-        else
-	  strcat(sql, ",NULL");
     }
-    sprintf(buffer, ",GeomFromText('POINT(%.15g %.15g)'))", node_lon, node_lat);
-    strcat(sql, buffer);
+
+    tmp_len = sprintf(p, ",GeomFromText('POINT(%.15g %.15g)'))", node_lon, node_lat);
+    p += tmp_len;
+    //    strcpy(p, "'))\0");
 
     mysql_exec(tables[t_point].sql_conn, sql);
 
@@ -589,7 +646,7 @@ static int mysql_delete_relation_from_output(osmid_t osm_id)
 static int mysql_process_relation(osmid_t id, struct member *members, int member_count, struct keyval *tags, int exists)
 {
   // (osmid_t id, struct keyval *rel_tags, struct osmNode **xnodes, struct keyval **xtags, int *xcount)
-    int i, j, count, count2;
+  int i, j, count, count2;
   osmid_t *xid2 = malloc( (member_count+1) * sizeof(osmid_t) );
   osmid_t *xid;
   const char **xrole = malloc( (member_count+1) * sizeof(const char *) );
@@ -666,7 +723,7 @@ static void mysql_out_cleanup(void)
 
 static int mysql_out_start(const struct output_options *options) 
 {
-  char *sql, tmp[256];
+  char *sql, **p, tmp[256];
   size_t sql_len;
   int i, j;
   MYSQL_PARAMETERS *mysql_params;
@@ -679,15 +736,11 @@ static int mysql_out_start(const struct output_options *options)
   assert(sql);
 
   mysql_params= mysql_get_parameters();
-  *mysql_params->p_max_allowed_packet= 67108864; // 64MB
+  *mysql_params->p_max_allowed_packet= my_max_packet;
 
   for (i=0; i<NUM_TABLES; i++) {
-    MYSQL *sql_conn = mysql_init(NULL);
+    MYSQL *sql_conn = mysql_my_connect(options);
     
-    if (NULL == mysql_real_connect(sql_conn, options->conn.host, options->conn.username, options->conn.password, options->conn.db, 3306 /* FIXME */, NULL, 0)) {
-      fprintf(stderr, "mysql connect failed: host %s:, db %s, user: %s\n", options->conn.host, options->conn.db, options->conn.username);
-      exit_nicely();
-    } 
     tables[i].sql_conn = sql_conn;
 
     /* Substitute prefix into name of table */
@@ -696,8 +749,6 @@ static int mysql_out_start(const struct output_options *options)
       sprintf( temp, tables[i].name, options->prefix );
       tables[i].name = temp;
     }
-
-    mysql_exec(sql_conn, "SET NAMES utf8");
 
     fprintf(stderr, "Setting up table: %s\n", tables[i].name);
     
@@ -747,6 +798,8 @@ static int mysql_out_start(const struct output_options *options)
       fprintf(stderr, "SQL: %s\n", sql);
 #endif
       mysql_exec(sql_conn, sql);
+
+      // mysql_vexec(sql_conn, "ALTER TABLE DISABLE KEYS %s", tables[i].name);
     } else { /* append */
       fprintf(stderr, "output-mysql doesn't support --append yet\n");
       exit_nicely(); 
@@ -754,11 +807,15 @@ static int mysql_out_start(const struct output_options *options)
 
     /* Generate column list for INSERT */
     strcpy(sql, "`osm_id`");
+    tables[i].column_names = p = (char **)malloc(sizeof(char *) * (numTags+1));
     for (j=0; j < numTags; j++) {
       if( exportTags[j].flags & FLAG_DELETE )
 	continue;
       if( (exportTags[j].flags & FLAG_PHSTORE ) == FLAG_PHSTORE)
 	continue;
+
+      *p++ = strdup(exportTags[j].name);
+
       sprintf(tmp, ",`%s`", exportTags[j].name);
       
       if (strlen(sql) + strlen(tmp) + 1 > sql_len) {
@@ -768,6 +825,7 @@ static int mysql_out_start(const struct output_options *options)
       }
       strcat(sql, tmp);
     }
+    *p = NULL;
 
     /* FIXME hstore */
     
@@ -838,6 +896,8 @@ static void mysql_out_close(int stopTransaction) {
   for (i=0; i<NUM_TABLES; i++) {
     if (stopTransaction)
       mysql_exec(tables[i].sql_conn, "COMMIT");
+    fprintf(stderr, "closing table %s\n", tables[i].name);
+    //    mysql_vexec(tables[i].sql_conn, "ALTER TABLE ENABLE KEYS %s", tables[i].name);
     mysql_close(tables[i].sql_conn);
     tables[i].sql_conn = NULL;
   }

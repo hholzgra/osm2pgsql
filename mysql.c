@@ -9,6 +9,7 @@
 #include "mysql.h"
 #include "osmtypes.h"
 
+int my_max_packet = 64*1024*1024;
 
 int mysql_exec(MYSQL *sql_conn, const char *sql)
 {
@@ -71,4 +72,18 @@ int mysql_vexec(MYSQL *sql_conn, const char *fmt, ...)
   free(sql);
 
   return res;
+}
+
+MYSQL *mysql_my_connect(const struct output_options *options)
+{
+  MYSQL *conn = mysql_init(NULL);
+
+  if (NULL == mysql_real_connect(conn, options->conn.host, options->conn.username, "secret" /*options->conn.password*/, options->conn.db, 3306 /* FIXME */, NULL, 0)) {
+    fprintf(stderr, "mysql connect failed: host %s:, db %s, user: %s\nerror: %s\n", options->conn.host, options->conn.db, options->conn.username, mysql_error(conn));
+    exit_nicely();
+  } 
+  
+  mysql_exec(conn, "SET NAMES utf8");
+
+  return conn;
 }

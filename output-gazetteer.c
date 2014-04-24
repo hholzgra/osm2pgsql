@@ -811,7 +811,7 @@ static void add_place(char osm_type, osmid_t osm_id, const char *class, const ch
 
    if (addr_place)
    {
-      escape(sql, sizeof(sql), addr_place->value);
+      pgsql_escape(sql, sizeof(sql), addr_place->value);
       copy_data(sql);
       copy_data("\t");
    }

@@ -183,6 +183,7 @@ static void pgsql_cleanup(void)
     }
 }
 
+/* create pgsql intarray string from node list */
 char *pgsql_store_nodes(osmid_t *nds, int nd_count)
 {
   static char *buffer;
@@ -731,7 +732,7 @@ static int pgsql_ways_get_list(osmid_t *ids, int way_count, osmid_t **way_ids, s
     PGconn *sql_conn = way_table->sql_conn;
     
     *way_ids = malloc( sizeof(osmid_t) * (way_count + 1));
-    if (way_count == 0) return 0;
+    if (way_count == 0) return 0; // TODO swap lines? or wrong check?
     
     tmp2 = malloc(sizeof(char)*way_count*16);
     if (tmp2 == NULL) return 0; /*failed to allocate memory, return */

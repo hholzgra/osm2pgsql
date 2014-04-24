@@ -79,14 +79,7 @@ void read_style_file( const char *filename, const struct output_options *Options
       if( i == NUM_FLAGS )
         fprintf( stderr, "Unknown flag '%s' line %d, ignored\n", str, lineno );
     }
-    if (temp.flags==FLAG_PHSTORE) {
-        if (HSTORE_NONE==(Options->enable_hstore)) {
-            fprintf( stderr, "Error reading style file line %d (fields=%d)\n", lineno, fields );
-            fprintf( stderr, "flag 'phstore' is invalid in non-hstore mode\n");
-            exit_nicely();
-        }
-    }
-    if ((temp.flags!=FLAG_DELETE) && ((strchr(temp.name,'?') != NULL) || (strchr(temp.name,'*') >0))) {
+    if ((temp.flags!=FLAG_DELETE) && ((strchr(temp.name,'?') != NULL) || (strchr(temp.name,'*') != NULL))) {
         fprintf( stderr, "wildcard '%s' in non-delete style entry\n",temp.name);
         exit_nicely();
     }
