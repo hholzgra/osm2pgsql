@@ -180,7 +180,12 @@ namespace
                         xml       - Parse as OSM XML.\n\
                         pbf       - OSM binary format.\n\
        -O|--output      Output backend.\n\
-                        pgsql - Output to a PostGIS database (default)\n\
+                        pgsql - Output to a PostGIS database (default)\n");
+    #ifdef HAVE_MYSQL
+        printf("\
+                        mysql - Output to a MySQL database\n");
+    #endif
+        printf("\
                         multi - Multiple Custom Table Output to a PostGIS \n\
                             database (requires style file for configuration)\n\
                         gazetteer - Output to a PostGIS database for Nominatim\n\

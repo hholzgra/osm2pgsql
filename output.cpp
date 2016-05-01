@@ -3,6 +3,9 @@
 #include "output-gazetteer.hpp"
 #include "output-null.hpp"
 #include "output-multi.hpp"
+#if HAVE_MYSQL
+#include "output-mysql.hpp"
+#endif
 #include "taginfo_impl.hpp"
 
 #include <string.h>
@@ -111,6 +114,15 @@ std::vector<std::shared_ptr<output_t> > parse_multi_config(const middle_query_t 
 std::vector<std::shared_ptr<output_t> > output_t::create_outputs(const middle_query_t *mid, const options_t &options) {
     std::vector<std::shared_ptr<output_t> > outputs;
 
+    const char *known_backends =
+      "pgsql, "
+      "gazetteer, "
+      "null, "
+#if HAVE_MYSQL
+      "mysql, "
+#endif
+      "multi";
+
     if (options.output_backend == "pgsql") {
         outputs.push_back(std::make_shared<output_pgsql_t>(mid, options));
 
@@ -120,11 +132,16 @@ std::vector<std::shared_ptr<output_t> > output_t::create_outputs(const middle_qu
     } else if (options.output_backend == "null") {
         outputs.push_back(std::make_shared<output_null_t>(mid, options));
 
+#if HAVE_MYSQL
+    } else if (options.output_backend == "mysql") {
+        outputs.push_back(std::make_shared<output_mysql_t>(mid, options));
+
+#endif
     } else if (options.output_backend == "multi") {
         outputs = parse_multi_config(mid, options);
 
     } else {
-        throw std::runtime_error((boost::format("Output backend `%1%' not recognised. Should be one of [pgsql, gazetteer, null, multi].\n") % options.output_backend).str());
+        throw std::runtime_error((boost::format("Output backend `%1%' not recognised. Should be one of [%2%].\n") % options.output_backend % known_backends).str());
     }
 
     return outputs;

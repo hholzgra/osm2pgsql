@@ -12,6 +12,7 @@ set(DATA_DIR \"${CMAKE_INSTALL_PREFIX}/share/osm2pgsql\")
 
 option(BUILD_TESTS "Build test suite" OFF)
 option(WITH_LUA    "Build with lua support" ON)
+option(WITH_MYSQL  "Build with MySQL support" ON)
 
 if (NOT TESTING_TIMEOUT)
   set(TESTING_TIMEOUT 1200)
@@ -105,6 +106,12 @@ if (WITH_LUA)
   set(HAVE_LUA 1)
 endif()
 
+if (WITH_MYSQL)
+  find_package(MySQL REQUIRED)
+  include_directories(${MYSQL_INCLUDE_DIR})
+  set(HAVE_MYSQL 1)
+endif()
+
 if (MSVC)
   # Boost thread needs extra libraries
   set(BOOST_EXTRA date_time chrono)
@@ -130,6 +137,10 @@ set (LIBS ${Boost_LIBRARIES} ${PostgreSQL_LIBRARY} ${OSMIUM_LIBRARIES})
 
 if (LUA_FOUND)
   list(APPEND LIBS ${LUA_LIBRARIES})
+endif()
+
+if (MYSQL_FOUND)
+  list(APPEND LIBS ${MYSQL_LIBRARIES})
 endif()
 
 if (WIN32)
@@ -229,6 +240,14 @@ set(osm2pgsql_lib_SOURCES
   util.hpp
   wildcmp.hpp
 )
+
+if (MYSQL_FOUND)
+  set(osm2pgsql_lib_SOURCES ${osm2pgsql_lib_SOURCES}
+    output-mysql.cpp
+    output-mysql.hpp
+  )
+endif()
+ 
 
 add_library(osm2pgsql_lib STATIC ${osm2pgsql_lib_SOURCES})
 set_target_properties(osm2pgsql_lib PROPERTIES OUTPUT_NAME osm2pgsql)
