@@ -20,7 +20,7 @@ used for importing.
 #include "osmtypes.hpp"
 #include "osmdata.hpp"
 #include "middle.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "options.hpp"
 #include "middle-pgsql.hpp"
 #include "middle-ram.hpp"

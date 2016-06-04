@@ -9,7 +9,7 @@
 
 #include "osmtypes.hpp"
 #include "osmdata.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "options.hpp"
 #include "middle-pgsql.hpp"
 #include "middle-ram.hpp"
@@ -65,7 +65,7 @@ void test_other_output_schema() {
                       "CREATE TABLE myschema.osm2pgsql_test_polygon (id bigint);"
                       "CREATE TABLE myschema.osm2pgsql_test_roads (id bigint)");
 
-    std::string proc_name("test-output-pgsql-schema"), input_file("-");
+    std::string proc_name("test-output-sql-schema"), input_file("-");
     char *argv[] = { &proc_name[0], &input_file[0], nullptr };
 
     std::shared_ptr<middle_pgsql_t> mid_pgsql(new middle_pgsql_t());

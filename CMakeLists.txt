@@ -12,7 +12,7 @@ set(DATA_DIR \"${CMAKE_INSTALL_PREFIX}/share/osm2pgsql\")
 
 option(BUILD_TESTS "Build test suite" OFF)
 option(WITH_LUA    "Build with lua support" ON)
-option(WITH_MYSQL  "Build with MySQL support" ON)
+option(WITH_MYSQL  "Build with MySQL support" OFF)
 
 if (NOT TESTING_TIMEOUT)
   set(TESTING_TIMEOUT 1200)
@@ -195,7 +195,7 @@ set(osm2pgsql_lib_SOURCES
   output-gazetteer.cpp
   output-multi.cpp
   output-null.cpp
-  output-pgsql.cpp
+  output-sql.cpp
   output.cpp
   parse-osmium.cpp
   pgsql.cpp
@@ -205,6 +205,7 @@ set(osm2pgsql_lib_SOURCES
   reprojection.cpp
   sprompt.cpp
   table.cpp
+  table-pgsql.cpp
   taginfo.cpp
   tagtransform.cpp
   util.cpp
@@ -224,7 +225,7 @@ set(osm2pgsql_lib_SOURCES
   output-gazetteer.hpp
   output-multi.hpp
   output-null.hpp
-  output-pgsql.hpp
+  output-sql.hpp
   output.hpp
   parse-osmium.hpp
   pgsql.hpp
@@ -234,6 +235,7 @@ set(osm2pgsql_lib_SOURCES
   reprojection.hpp
   sprompt.hpp
   table.hpp
+  table-pgsql.hpp
   taginfo.hpp
   taginfo_impl.hpp
   tagtransform.hpp
@@ -243,8 +245,8 @@ set(osm2pgsql_lib_SOURCES
 
 if (MYSQL_FOUND)
   set(osm2pgsql_lib_SOURCES ${osm2pgsql_lib_SOURCES}
-    output-mysql.cpp
-    output-mysql.hpp
+    table-mysql.cpp
+    table-mysql.hpp
   )
 endif()
  

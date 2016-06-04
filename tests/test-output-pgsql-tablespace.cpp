@@ -9,7 +9,7 @@
 
 #include "osmtypes.hpp"
 #include "osmdata.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "options.hpp"
 #include "middle-pgsql.hpp"
 #include "middle-ram.hpp"
@@ -62,7 +62,7 @@ void test_regression_simple() {
         throw skip_test();
     }
 
-    std::string proc_name("test-output-pgsql"), input_file("-");
+    std::string proc_name("test-output-sql"), input_file("-");
     char *argv[] = { &proc_name[0], &input_file[0], nullptr };
 
     std::shared_ptr<middle_pgsql_t> mid_pgsql(new middle_pgsql_t());

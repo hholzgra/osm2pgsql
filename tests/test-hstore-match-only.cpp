@@ -17,7 +17,7 @@ The tags of inteest are specified in hstore-match-only.style
 #include "osmtypes.hpp"
 #include "osmdata.hpp"
 #include "middle.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "options.hpp"
 #include "middle-pgsql.hpp"
 #include "middle-ram.hpp"

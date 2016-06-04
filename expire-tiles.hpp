@@ -2,6 +2,7 @@
 #define EXPIRE_TILES_H
 
 #include "osmtypes.hpp"
+#include "table.hpp"
 
 #include <boost/noncopyable.hpp>
 

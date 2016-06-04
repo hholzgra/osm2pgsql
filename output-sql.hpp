@@ -12,7 +12,11 @@
 #include "reprojection.hpp"
 #include "expire-tiles.hpp"
 #include "id-tracker.hpp"
-#include "table.hpp"
+#include "table-pgsql.hpp"
+#if HAVE_MYSQL
+#  include "table-mysql.hpp"
+#endif
+
 
 #include <vector>
 #include <memory>

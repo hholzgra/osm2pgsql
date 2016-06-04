@@ -16,7 +16,6 @@
 typedef int64_t osmid_t;
 #define strtoosmid strtoll
 #define PRIdOSMID PRId64
-#define POSTGRES_OSMID_TYPE "int8"
 
 enum OsmType { OSMTYPE_WAY, OSMTYPE_NODE, OSMTYPE_RELATION };
 

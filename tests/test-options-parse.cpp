@@ -1,7 +1,7 @@
 #include "options.hpp"
 #include "middle-pgsql.hpp"
 #include "middle-ram.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "output-gazetteer.hpp"
 #include "output-null.hpp"
 

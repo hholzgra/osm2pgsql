@@ -26,13 +26,12 @@
 #include <boost/exception_ptr.hpp>
 #include <boost/format.hpp>
 
+#include "options.hpp"
 #include "expire-tiles.hpp"
 #include "middle.hpp"
 #include "node-ram-cache.hpp"
-#include "options.hpp"
 #include "osmtypes.hpp"
-#include "output-pgsql.hpp"
-#include "pgsql.hpp"
+#include "output-sql.hpp"
 #include "reprojection.hpp"
 #include "taginfo_impl.hpp"
 #include "tagtransform.hpp"
@@ -648,14 +647,29 @@ output_pgsql_t::output_pgsql_t(const middle_query_t* mid_, const options_t &opti
         //tremble in awe of this massive constructor! seriously we are trying to avoid passing an
         //options object because we want to make use of the table_t in output_mutli_t which could
         //have a different tablespace/hstores/etc per table
+#if HAVE_MYSQL
+	if (m_options.output_backend == "mysql") {
+            m_tables.push_back(std::shared_ptr<table_t>(
+                new table_mysql_t(
+                    m_options.database_options, name, type, columns, m_options.hstore_columns,
+                    reproj->target_srs(),
+                    m_options.append, m_options.slim, m_options.droptemp, m_options.hstore_mode,
+                    m_options.enable_hstore_index, m_options.tblsmain_data, m_options.tblsmain_index
+                )
+             ));
+	} else {
+#endif
         m_tables.push_back(std::shared_ptr<table_t>(
-            new table_t(
-                m_options.database_options.conninfo(), name, type, columns, m_options.hstore_columns,
+            new table_pgsql_t(
+                m_options.database_options, name, type, columns, m_options.hstore_columns,
                 reproj->target_srs(),
                 m_options.append, m_options.slim, m_options.droptemp, m_options.hstore_mode,
                 m_options.enable_hstore_index, m_options.tblsmain_data, m_options.tblsmain_index
             )
         ));
+#if HAVE_MYSQL
+	}
+#endif
     }
 }
 
@@ -669,7 +683,7 @@ output_pgsql_t::output_pgsql_t(const output_pgsql_t& other):
     if (m_options.reproject_area) builder.set_reprojection(reproj.get());
     for(std::vector<std::shared_ptr<table_t> >::const_iterator t = other.m_tables.begin(); t != other.m_tables.end(); ++t) {
         //copy constructor will just connect to the already there table
-        m_tables.push_back(std::shared_ptr<table_t>(new table_t(**t)));
+        m_tables.push_back(std::shared_ptr<table_t>(t->get()->clone()));
     }
 }
 

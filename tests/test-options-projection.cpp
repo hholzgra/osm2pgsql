@@ -27,7 +27,7 @@
 
 #include "middle-ram.hpp"
 #include "options.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "reprojection.hpp"
 
 #include "tests/common.hpp"

@@ -1,11 +1,8 @@
 #include "output.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "output-gazetteer.hpp"
 #include "output-null.hpp"
 #include "output-multi.hpp"
-#if HAVE_MYSQL
-#include "output-mysql.hpp"
-#endif
 #include "taginfo_impl.hpp"
 
 #include <string.h>
@@ -134,7 +131,7 @@ std::vector<std::shared_ptr<output_t> > output_t::create_outputs(const middle_qu
 
 #if HAVE_MYSQL
     } else if (options.output_backend == "mysql") {
-        outputs.push_back(std::make_shared<output_mysql_t>(mid, options));
+        outputs.push_back(std::make_shared<output_pgsql_t>(mid, options));
 
 #endif
     } else if (options.output_backend == "multi") {
@@ -155,11 +152,11 @@ output_t::~output_t() {
 
 }
 
-size_t output_t::pending_count() const{
+size_t output_t::pending_count() const {
     return 0;
 }
 
-const options_t *output_t::get_options()const {
+const options_t *output_t::get_options() const {
 	return &m_options;
 }
 

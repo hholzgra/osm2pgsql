@@ -1,10 +1,12 @@
 /* Helper functions for pgsql access */
 
-/* Current middle and output-pgsql do a lot of things similarly, this should
+/* Current middle and output-sql do a lot of things similarly, this should
  * be used to abstract to commonalities */
 
 #ifndef PGSQL_H
 #define PGSQL_H
+
+#define POSTGRES_OSMID_TYPE "int8"
 
 #include <string>
 #include <cstring>
@@ -32,3 +34,4 @@ inline void pgsql_CopyData(const char *context, PGconn *sql_conn, const std::str
     pgsql_CopyData(context, sql_conn, sql.c_str(), (int) sql.length());
 }
 #endif
+

@@ -48,7 +48,7 @@ using namespace std;
 #include "node-ram-cache.hpp"
 #include "options.hpp"
 #include "osmtypes.hpp"
-#include "output-pgsql.hpp"
+#include "output-sql.hpp"
 #include "pgsql.hpp"
 #include "util.hpp"
 

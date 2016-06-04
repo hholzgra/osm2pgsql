@@ -14,8 +14,8 @@
 #include <cerrno>
 #include <string>
 
-#include "expire-tiles.hpp"
 #include "options.hpp"
+#include "expire-tiles.hpp"
 #include "geometry-builder.hpp"
 #include "reprojection.hpp"
 #include "table.hpp"

@@ -1,6 +1,7 @@
 #include "output-multi.hpp"
 #include "taginfo_impl.hpp"
 #include "table.hpp"
+#include "table-pgsql.hpp"
 #include "tagtransform.hpp"
 #include "options.hpp"
 #include "middle.hpp"
@@ -21,7 +22,7 @@ output_multi_t::output_multi_t(const std::string &name,
       m_processor(processor_),
       //TODO: we could in fact have something that is interested in nodes and ways..
       m_osm_type(m_processor->interests(geometry_processor::interest_node) ? OSMTYPE_NODE : OSMTYPE_WAY),
-      m_table(new table_t(m_options.database_options.conninfo(), name, m_processor->column_type(),
+      m_table(new table_pgsql_t(m_options.database_options, name, m_processor->column_type(),
                           m_export_list->normal_columns(m_osm_type),
                           m_options.hstore_columns, m_processor->srid(),
                           m_options.append, m_options.slim, m_options.droptemp,
@@ -33,7 +34,7 @@ output_multi_t::output_multi_t(const std::string &name,
 
 output_multi_t::output_multi_t(const output_multi_t& other):
     output_t(other.m_mid, other.m_options), m_tagtransform(new tagtransform(&m_options)), m_export_list(new export_list(*other.m_export_list)),
-    m_processor(other.m_processor), m_osm_type(other.m_osm_type), m_table(new table_t(*other.m_table)),
+    m_processor(other.m_processor), m_osm_type(other.m_osm_type), m_table(other.m_table->clone()),
     ways_pending_tracker(new id_tracker()), ways_done_tracker(new id_tracker()), rels_pending_tracker(new id_tracker()),
     m_expire(new expire_tiles(&m_options)) {
 }
