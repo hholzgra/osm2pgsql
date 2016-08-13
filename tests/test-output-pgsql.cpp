@@ -75,7 +75,7 @@ void test_regression_simple() {
     options.slim = true;
     options.style = "default.style";
 
-    auto out_test = std::make_shared<output_pgsql_t>(mid_pgsql.get(), options);
+    auto out_test = std::make_shared<output_sql_t>(mid_pgsql.get(), options);
 
     osmdata_t osmdata(mid_pgsql, out_test);
 
@@ -128,7 +128,7 @@ void test_latlong() {
     options.projection.reset(reprojection::create_projection(PROJ_LATLONG));
     options.scale = (options.projection->target_latlon()) ? 10000000 : 100;
 
-    auto out_test = std::make_shared<output_pgsql_t>(mid_pgsql.get(), options);
+    auto out_test = std::make_shared<output_sql_t>(mid_pgsql.get(), options);
 
     osmdata_t osmdata(mid_pgsql, out_test);
 
@@ -181,7 +181,7 @@ void test_area_way_simple() {
     options.flat_node_cache_enabled = true;
     options.flat_node_file = boost::optional<std::string>(FLAT_NODES_FILE_NAME);
 
-    auto out_test = std::make_shared<output_pgsql_t>(mid_pgsql.get(), options);
+    auto out_test = std::make_shared<output_sql_t>(mid_pgsql.get(), options);
 
     osmdata_t osmdata(mid_pgsql, out_test);
 
@@ -220,7 +220,7 @@ void test_route_rel() {
     options.slim = false;
     options.style = "default.style";
 
-    auto out_test = std::make_shared<output_pgsql_t>(mid_ram.get(), options);
+    auto out_test = std::make_shared<output_sql_t>(mid_ram.get(), options);
 
     osmdata_t osmdata(mid_ram, out_test);
 
@@ -261,7 +261,7 @@ void test_clone() {
     options.slim = true;
     options.style = "default.style";
 
-    output_pgsql_t out_test(mid_pgsql.get(), options);
+    output_sql_t out_test(mid_pgsql.get(), options);
 
     //TODO: make the middle testable too
     //std::shared_ptr<middle_t> mid_clone = mid_pgsql->get_instance();

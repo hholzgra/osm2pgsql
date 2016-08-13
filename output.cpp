@@ -121,7 +121,12 @@ std::vector<std::shared_ptr<output_t> > output_t::create_outputs(const middle_qu
       "multi";
 
     if (options.output_backend == "pgsql") {
-        outputs.push_back(std::make_shared<output_pgsql_t>(mid, options));
+        outputs.push_back(std::make_shared<output_sql_t>(mid, options));
+
+#if HAVE_MYSQL
+    } else if (options.output_backend == "mysql") {
+        outputs.push_back(std::make_shared<output_sql_t>(mid, options));
+#endif
 
     } else if (options.output_backend == "gazetteer") {
         outputs.push_back(std::make_shared<output_gazetteer_t>(mid, options));
@@ -129,11 +134,6 @@ std::vector<std::shared_ptr<output_t> > output_t::create_outputs(const middle_qu
     } else if (options.output_backend == "null") {
         outputs.push_back(std::make_shared<output_null_t>(mid, options));
 
-#if HAVE_MYSQL
-    } else if (options.output_backend == "mysql") {
-        outputs.push_back(std::make_shared<output_pgsql_t>(mid, options));
-
-#endif
     } else if (options.output_backend == "multi") {
         outputs = parse_multi_config(mid, options);
 

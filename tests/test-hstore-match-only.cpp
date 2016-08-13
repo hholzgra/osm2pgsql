@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
         options.slim = 1;
         options.append = false;
 
-        auto out_test = std::make_shared<output_pgsql_t>(mid_pgsql.get(), options);
+        auto out_test = std::make_shared<output_sql_t>(mid_pgsql.get(), options);
 
         osmdata_t osmdata(mid_pgsql, out_test);
 

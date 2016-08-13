@@ -3,8 +3,8 @@
  * with the final PostGIS geometries for each entity
 */
 
-#ifndef OUTPUT_PGSQL_H
-#define OUTPUT_PGSQL_H
+#ifndef OUTPUT_SQL_H
+#define OUTPUT_SQL_H
 
 #include "output.hpp"
 #include "tagtransform.hpp"
@@ -21,15 +21,15 @@
 #include <vector>
 #include <memory>
 
-class output_pgsql_t : public output_t {
+class output_sql_t : public output_t {
 public:
     enum table_id {
         t_point = 0, t_line, t_poly, t_roads, t_MAX
     };
 
-    output_pgsql_t(const middle_query_t* mid_, const options_t &options_);
-    virtual ~output_pgsql_t();
-    output_pgsql_t(const output_pgsql_t& other);
+    output_sql_t(const middle_query_t* mid_, const options_t &options_);
+    virtual ~output_sql_t();
+    output_sql_t(const output_sql_t& other);
 
     virtual std::shared_ptr<output_t> clone(const middle_query_t* cloned_middle) const;
 
@@ -64,16 +64,16 @@ public:
 
 protected:
 
-    int pgsql_out_node(osmid_t id, const taglist_t &tags, double node_lat, double node_lon);
-    int pgsql_out_way(osmid_t id, taglist_t &tags, const nodelist_t &nodes,
+    int sql_out_node(osmid_t id, const taglist_t &tags, double node_lat, double node_lon);
+    int sql_out_way(osmid_t id, taglist_t &tags, const nodelist_t &nodes,
                       int polygons, int roads);
-    int pgsql_out_relation(osmid_t id, const taglist_t &rel_tags,
+    int sql_out_relation(osmid_t id, const taglist_t &rel_tags,
                            const multinodelist_t &xnodes, const multitaglist_t & xtags,
                            const idlist_t &xid, const rolelist_t &xrole,
                            bool pending);
-    int pgsql_process_relation(osmid_t id, const memberlist_t &members, const taglist_t &tags, int exists, bool pending=false);
-    int pgsql_delete_way_from_output(osmid_t osm_id);
-    int pgsql_delete_relation_from_output(osmid_t osm_id);
+    int sql_process_relation(osmid_t id, const memberlist_t &members, const taglist_t &tags, int exists, bool pending=false);
+    int sql_delete_way_from_output(osmid_t osm_id);
+    int sql_delete_relation_from_output(osmid_t osm_id);
 
     std::unique_ptr<tagtransform> m_tagtransform;
 

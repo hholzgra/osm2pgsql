@@ -74,7 +74,7 @@ void test_area_base(bool latlon, bool reproj, double expect_area_poly, double ex
     }
     options.scale = latlon ? 10000000 : 100;
 
-    auto out_test = std::make_shared<output_pgsql_t>(mid_pgsql.get(), options);
+    auto out_test = std::make_shared<output_sql_t>(mid_pgsql.get(), options);
 
     osmdata_t osmdata(mid_pgsql, out_test);
     testing::parse("tests/test_output_pgsql_area.osm", "xml",

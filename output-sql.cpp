@@ -60,7 +60,7 @@ psql - 01 01000020 E6100000 30CCA462B6C3D4BF92998C9B38E04940
 Workaround - output SRID=4326;<WKB>
 */
 
-int output_pgsql_t::pgsql_out_node(osmid_t id, const taglist_t &tags, double node_lat, double node_lon)
+int output_sql_t::sql_out_node(osmid_t id, const taglist_t &tags, double node_lat, double node_lon)
 {
     taglist_t outtags;
     if (m_tagtransform->filter_node_tags(tags, *m_export_list.get(), outtags))
@@ -81,7 +81,7 @@ E4C1421D5BF24D06053E7DF4940
 212696  Oswald Road     \N      \N      \N      \N      \N      \N      minor   \N      \N      \N      \N      \N      \N      \N    0102000020E610000004000000467D923B6C22D5BFA359D93EE4DF4940B3976DA7AD11D5BF84BBB376DBDF4940997FF44D9A06D5BF4223D8B8FEDF49404D158C4AEA04D
 5BF5BB39597FCDF4940
 */
-int output_pgsql_t::pgsql_out_way(osmid_t id, taglist_t &outtags,
+int output_sql_t::sql_out_way(osmid_t id, taglist_t &outtags,
                                   const nodelist_t &nodes,
                                   int polygon, int roads)
 {
@@ -114,7 +114,7 @@ int output_pgsql_t::pgsql_out_way(osmid_t id, taglist_t &outtags,
     return 0;
 }
 
-int output_pgsql_t::pgsql_out_relation(osmid_t id, const taglist_t &rel_tags,
+int output_sql_t::sql_out_relation(osmid_t id, const taglist_t &rel_tags,
                            const multinodelist_t &xnodes, const multitaglist_t & xtags,
                            const idlist_t &xid, const rolelist_t &xrole,
                            bool pending)
@@ -176,7 +176,7 @@ int output_pgsql_t::pgsql_out_relation(osmid_t id, const taglist_t &rel_tags,
     if (make_polygon) {
         for (size_t i=0; i < xid.size(); i++) {
             if (members_superseeded[i]) {
-                pgsql_delete_way_from_output(xid[i]);
+                sql_delete_way_from_output(xid[i]);
                 if(!pending)
                     ways_done_tracker->mark(xid[i]);
             }
@@ -202,7 +202,7 @@ int output_pgsql_t::pgsql_out_relation(osmid_t id, const taglist_t &rel_tags,
 }
 
 
-void output_pgsql_t::enqueue_ways(pending_queue_t &job_queue, osmid_t id, size_t output_id, size_t& added) {
+void output_sql_t::enqueue_ways(pending_queue_t &job_queue, osmid_t id, size_t output_id, size_t& added) {
     osmid_t const prev = ways_pending_tracker->last_returned();
     if (id_tracker::is_valid(prev) && prev >= id) {
         if (prev > id) {
@@ -241,7 +241,7 @@ void output_pgsql_t::enqueue_ways(pending_queue_t &job_queue, osmid_t id, size_t
     }
 }
 
-int output_pgsql_t::pending_way(osmid_t id, int exists) {
+int output_sql_t::pending_way(osmid_t id, int exists) {
     taglist_t tags_int;
     nodelist_t nodes_int;
 
@@ -249,7 +249,7 @@ int output_pgsql_t::pending_way(osmid_t id, int exists) {
     if (m_mid->ways_get(id, tags_int, nodes_int)) {
         /* If the flag says this object may exist already, delete it first */
         if (exists) {
-            pgsql_delete_way_from_output(id);
+            sql_delete_way_from_output(id);
             // TODO: this now only has an effect when called from the iterate_ways
             // call-back, so we need some alternative way to trigger this within
             // osmdata_t.
@@ -264,14 +264,14 @@ int output_pgsql_t::pending_way(osmid_t id, int exists) {
         int roads;
         if (!m_tagtransform->filter_way_tags(tags_int, &polygon, &roads,
                                             *m_export_list.get(), outtags)) {
-            return pgsql_out_way(id, outtags, nodes_int, polygon, roads);
+            return sql_out_way(id, outtags, nodes_int, polygon, roads);
         }
     }
 
     return 0;
 }
 
-void output_pgsql_t::enqueue_relations(pending_queue_t &job_queue, osmid_t id, size_t output_id, size_t& added) {
+void output_sql_t::enqueue_relations(pending_queue_t &job_queue, osmid_t id, size_t output_id, size_t& added) {
     osmid_t const prev = rels_pending_tracker->last_returned();
     if (id_tracker::is_valid(prev) && prev >= id) {
         if (prev > id) {
@@ -308,27 +308,27 @@ void output_pgsql_t::enqueue_relations(pending_queue_t &job_queue, osmid_t id, s
     }
 }
 
-int output_pgsql_t::pending_relation(osmid_t id, int exists) {
+int output_sql_t::pending_relation(osmid_t id, int exists) {
     taglist_t tags_int;
     memberlist_t members_int;
     int ret = 0;
 
     // Try to fetch the relation from the DB
     if (m_mid->relations_get(id, members_int, tags_int)) {
-        ret = pgsql_process_relation(id, members_int, tags_int, exists, true);
+        ret = sql_process_relation(id, members_int, tags_int, exists, true);
     }
 
     return ret;
 }
 
-void output_pgsql_t::commit()
+void output_sql_t::commit()
 {
     for (const auto &t : m_tables) {
         t->commit();
     }
 }
 
-void output_pgsql_t::stop()
+void output_sql_t::stop()
 {
     if (m_options.parallel_indexing) {
       std::vector<std::future<void>> outs;
@@ -355,14 +355,14 @@ void output_pgsql_t::stop()
     expire.reset();
 }
 
-int output_pgsql_t::node_add(osmid_t id, double lat, double lon, const taglist_t &tags)
+int output_sql_t::node_add(osmid_t id, double lat, double lon, const taglist_t &tags)
 {
-  pgsql_out_node(id, tags, lat, lon);
+  sql_out_node(id, tags, lat, lon);
 
   return 0;
 }
 
-int output_pgsql_t::way_add(osmid_t id, const idlist_t &nds, const taglist_t &tags)
+int output_sql_t::way_add(osmid_t id, const idlist_t &nds, const taglist_t &tags)
 {
   int polygon = 0;
   int roads = 0;
@@ -381,19 +381,19 @@ int output_pgsql_t::way_add(osmid_t id, const idlist_t &nds, const taglist_t &ta
     /* Get actual node data and generate output */
     nodelist_t nodes;
     m_mid->nodes_get_list(nodes, nds);
-    pgsql_out_way(id, outtags, nodes, polygon, roads);
+    sql_out_way(id, outtags, nodes, polygon, roads);
   }
   return 0;
 }
 
 
 /* This is the workhorse of pgsql_add_relation, split out because it is used as the callback for iterate relations */
-int output_pgsql_t::pgsql_process_relation(osmid_t id, const memberlist_t &members,
+int output_sql_t::sql_process_relation(osmid_t id, const memberlist_t &members,
                                            const taglist_t &tags, int exists, bool pending)
 {
   /* If the flag says this object may exist already, delete it first */
   if(exists)
-      pgsql_delete_relation_from_output(id);
+      sql_delete_relation_from_output(id);
 
   taglist_t outtags;
 
@@ -437,12 +437,12 @@ int output_pgsql_t::pgsql_process_relation(osmid_t id, const memberlist_t &membe
   }
 
   /* At some point we might want to consider storing the retrieved data in the members, rather than as separate arrays */
-  pgsql_out_relation(id, outtags, xnodes, xtags, xid, xrole, pending);
+  sql_out_relation(id, outtags, xnodes, xtags, xid, xrole, pending);
 
   return 0;
 }
 
-int output_pgsql_t::relation_add(osmid_t id, const memberlist_t &members, const taglist_t &tags)
+int output_sql_t::relation_add(osmid_t id, const memberlist_t &members, const taglist_t &tags)
 {
   const std::string *type = tags.get("type");
 
@@ -455,13 +455,13 @@ int output_pgsql_t::relation_add(osmid_t id, const memberlist_t &members, const 
     return 0;
 
 
-  return pgsql_process_relation(id, members, tags, 0);
+  return sql_process_relation(id, members, tags, 0);
 }
 
 /* Delete is easy, just remove all traces of this object. We don't need to
  * worry about finding objects that depend on it, since the same diff must
  * contain the change for that also. */
-int output_pgsql_t::node_delete(osmid_t osm_id)
+int output_sql_t::node_delete(osmid_t osm_id)
 {
     if( !m_options.slim )
     {
@@ -476,7 +476,7 @@ int output_pgsql_t::node_delete(osmid_t osm_id)
 }
 
 /* Seperated out because we use it elsewhere */
-int output_pgsql_t::pgsql_delete_way_from_output(osmid_t osm_id)
+int output_sql_t::sql_delete_way_from_output(osmid_t osm_id)
 {
     /* Optimisation: we only need this is slim mode */
     if( !m_options.slim )
@@ -493,19 +493,19 @@ int output_pgsql_t::pgsql_delete_way_from_output(osmid_t osm_id)
     return 0;
 }
 
-int output_pgsql_t::way_delete(osmid_t osm_id)
+int output_sql_t::way_delete(osmid_t osm_id)
 {
     if( !m_options.slim )
     {
         fprintf( stderr, "Cannot apply diffs unless in slim mode\n" );
         util::exit_nicely();
     }
-    pgsql_delete_way_from_output(osm_id);
+    sql_delete_way_from_output(osm_id);
     return 0;
 }
 
 /* Relations are identified by using negative IDs */
-int output_pgsql_t::pgsql_delete_relation_from_output(osmid_t osm_id)
+int output_sql_t::sql_delete_relation_from_output(osmid_t osm_id)
 {
     m_tables[t_roads]->delete_row(-osm_id);
     if ( expire->from_db(m_tables[t_line].get(), -osm_id) != 0)
@@ -515,21 +515,21 @@ int output_pgsql_t::pgsql_delete_relation_from_output(osmid_t osm_id)
     return 0;
 }
 
-int output_pgsql_t::relation_delete(osmid_t osm_id)
+int output_sql_t::relation_delete(osmid_t osm_id)
 {
     if( !m_options.slim )
     {
         fprintf( stderr, "Cannot apply diffs unless in slim mode\n" );
         util::exit_nicely();
     }
-    pgsql_delete_relation_from_output(osm_id);
+    sql_delete_relation_from_output(osm_id);
     return 0;
 }
 
 /* Modify is slightly trickier. The basic idea is we simply delete the
  * object and create it with the new parameters. Then we need to mark the
  * objects that depend on this one */
-int output_pgsql_t::node_modify(osmid_t osm_id, double lat, double lon, const taglist_t &tags)
+int output_sql_t::node_modify(osmid_t osm_id, double lat, double lon, const taglist_t &tags)
 {
     if( !m_options.slim )
     {
@@ -541,7 +541,7 @@ int output_pgsql_t::node_modify(osmid_t osm_id, double lat, double lon, const ta
     return 0;
 }
 
-int output_pgsql_t::way_modify(osmid_t osm_id, const idlist_t &nodes, const taglist_t &tags)
+int output_sql_t::way_modify(osmid_t osm_id, const idlist_t &nodes, const taglist_t &tags)
 {
     if( !m_options.slim )
     {
@@ -554,7 +554,7 @@ int output_pgsql_t::way_modify(osmid_t osm_id, const idlist_t &nodes, const tagl
     return 0;
 }
 
-int output_pgsql_t::relation_modify(osmid_t osm_id, const memberlist_t &members, const taglist_t &tags)
+int output_sql_t::relation_modify(osmid_t osm_id, const memberlist_t &members, const taglist_t &tags)
 {
     if( !m_options.slim )
     {
@@ -566,7 +566,7 @@ int output_pgsql_t::relation_modify(osmid_t osm_id, const memberlist_t &members,
     return 0;
 }
 
-int output_pgsql_t::start()
+int output_sql_t::start()
 {
     for(std::vector<std::shared_ptr<table_t> >::iterator table = m_tables.begin(); table != m_tables.end(); ++table)
     {
@@ -577,8 +577,8 @@ int output_pgsql_t::start()
     return 0;
 }
 
-std::shared_ptr<output_t> output_pgsql_t::clone(const middle_query_t* cloned_middle) const {
-    output_pgsql_t *clone = new output_pgsql_t(*this);
+std::shared_ptr<output_t> output_sql_t::clone(const middle_query_t* cloned_middle) const {
+    output_sql_t *clone = new output_sql_t(*this);
     clone->m_mid = cloned_middle;
     //NOTE: we need to know which ways were used by relations so each thread
     //must have a copy of the original marked done ways, its read only so its ok
@@ -586,7 +586,7 @@ std::shared_ptr<output_t> output_pgsql_t::clone(const middle_query_t* cloned_mid
     return std::shared_ptr<output_t>(clone);
 }
 
-output_pgsql_t::output_pgsql_t(const middle_query_t* mid_, const options_t &options_)
+output_sql_t::output_sql_t(const middle_query_t* mid_, const options_t &options_)
     : output_t(mid_, options_),
       ways_pending_tracker(new id_tracker()),
       ways_done_tracker(new id_tracker()),
@@ -657,23 +657,21 @@ output_pgsql_t::output_pgsql_t(const middle_query_t* mid_, const options_t &opti
                     m_options.enable_hstore_index, m_options.tblsmain_data, m_options.tblsmain_index
                 )
              ));
-	} else {
+	} else
 #endif
-        m_tables.push_back(std::shared_ptr<table_t>(
+	{
+	    m_tables.push_back(std::shared_ptr<table_t>(
             new table_pgsql_t(
                 m_options.database_options, name, type, columns, m_options.hstore_columns,
                 reproj->target_srs(),
                 m_options.append, m_options.slim, m_options.droptemp, m_options.hstore_mode,
                 m_options.enable_hstore_index, m_options.tblsmain_data, m_options.tblsmain_index
-            )
-        ));
-#if HAVE_MYSQL
+		)));
 	}
-#endif
     }
 }
 
-output_pgsql_t::output_pgsql_t(const output_pgsql_t& other):
+output_sql_t::output_sql_t(const output_sql_t& other):
     output_t(other.m_mid, other.m_options), m_tagtransform(new tagtransform(&m_options)), m_enable_way_area(other.m_enable_way_area),
     m_export_list(new export_list(*other.m_export_list)), reproj(other.reproj),
     expire(new expire_tiles(&m_options)),
@@ -687,28 +685,28 @@ output_pgsql_t::output_pgsql_t(const output_pgsql_t& other):
     }
 }
 
-output_pgsql_t::~output_pgsql_t() {
+output_sql_t::~output_sql_t() {
 }
 
-size_t output_pgsql_t::pending_count() const {
+size_t output_sql_t::pending_count() const {
     return ways_pending_tracker->size() + rels_pending_tracker->size();
 }
 
-void output_pgsql_t::merge_pending_relations(std::shared_ptr<output_t> other) {
+void output_sql_t::merge_pending_relations(std::shared_ptr<output_t> other) {
     std::shared_ptr<id_tracker> tracker = other->get_pending_relations();
     osmid_t id;
     while(tracker.get() && id_tracker::is_valid((id = tracker->pop_mark()))){
         rels_pending_tracker->mark(id);
     }
 }
-void output_pgsql_t::merge_expire_trees(std::shared_ptr<output_t> other) {
+void output_sql_t::merge_expire_trees(std::shared_ptr<output_t> other) {
     if(other->get_expire_tree().get())
         expire->merge_and_destroy(*other->get_expire_tree());
 }
 
-std::shared_ptr<id_tracker> output_pgsql_t::get_pending_relations() {
+std::shared_ptr<id_tracker> output_sql_t::get_pending_relations() {
     return rels_pending_tracker;
 }
-std::shared_ptr<expire_tiles> output_pgsql_t::get_expire_tree() {
+std::shared_ptr<expire_tiles> output_sql_t::get_expire_tree() {
     return expire;
 }

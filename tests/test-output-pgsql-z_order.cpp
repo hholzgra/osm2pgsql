@@ -71,7 +71,7 @@ void test_z_order() {
     options.prefix = "osm2pgsql_test";
     options.style = "default.style";
 
-    auto out_test = std::make_shared<output_pgsql_t>(mid_pgsql.get(), options);
+    auto out_test = std::make_shared<output_sql_t>(mid_pgsql.get(), options);
 
     osmdata_t osmdata(mid_pgsql, out_test);
 

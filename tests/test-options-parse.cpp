@@ -91,7 +91,7 @@ void test_outputs()
     std::shared_ptr<middle_t> mid = middle_t::create_middle(options.slim);
     std::vector<std::shared_ptr<output_t> > outs = output_t::create_outputs(mid.get(), options);
     output_t* out = outs.front().get();
-    if(dynamic_cast<output_pgsql_t *>(out) == nullptr)
+    if(dynamic_cast<output_sql_t *>(out) == nullptr)
     {
         throw std::logic_error("Expected a pgsql output");
     }
