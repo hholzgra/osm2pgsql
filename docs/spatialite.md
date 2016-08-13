@@ -1,0 +1,3 @@
+# SpatiaLITE Output Backend #
+
+TODO: ...
