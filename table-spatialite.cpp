@@ -28,12 +28,29 @@ table_spatialite_t::table_spatialite_t(const database_options_t &database_option
   point_fmt = fmt("POINT(%.15g %.15g)");
 }
 
+void table_spatialite_t::init_prepared_statements(void)
+{
+  std::string insert_sql_wkt = (fmt("INSERT INTO %1% (%2%) VALUES (%3% GeomFromText(?, %4%))") % name % column_names % bind_names % srid).str();
+  
+  if (SQLITE_OK != sqlite3_prepare_v2(sql_conn, insert_sql_wkt.c_str(), -1, &insert_stmt_wkt, 0)) {
+    throw std::runtime_error((fmt("preparing stament '%1%' failed: %2%\n") % insert_sql_wkt % sqlite3_errmsg(sql_conn)).str());
+  }
+  
+  std::string insert_sql_wkb = (fmt("INSERT INTO %1% (%2%) VALUES (%3% GeomFromWKB(?, %4%))") % name % column_names % bind_names % srid).str();
+  
+  if (SQLITE_OK != sqlite3_prepare_v2(sql_conn, insert_sql_wkb.c_str(), -1, &insert_stmt_wkb, 0)) {
+    throw std::runtime_error((fmt("preparing stament '%1' failed: %2%\n") % insert_sql_wkb % sqlite3_errmsg(sql_conn)).str());
+  }
+  
+}
+
 table_spatialite_t::table_spatialite_t(const table_spatialite_t& other):
   table_t(other),
   column_names(other.column_names),
-  insert_stmt_wkt(other.insert_stmt_wkt),
-  insert_stmt_wkb(other.insert_stmt_wkb)
+  bind_names(other.bind_names)
 {
+  init_prepared_statements();
+  conn_count++;
 }
 
 table_spatialite_t::~table_spatialite_t()
@@ -47,13 +64,13 @@ void table_spatialite_t::teardown()
     commit();
     
     if (--conn_count == 0) {
-      if(sql_conn != nullptr)
-	{
-	  sqlite3_close(sql_conn);
-	  sql_conn = nullptr;
-	}
+      if(sql_conn != nullptr) {
+	sqlite3_close(sql_conn);
+	sql_conn = nullptr;
+      }
     }
   }
+
 }
 
 std::string const& table_spatialite_t::get_name() {
@@ -125,8 +142,9 @@ void table_spatialite_t::start()
 
     //generate column list for INSERT
     column_names = "`osm_id`,";
-    std::string bind_names = "?,";
+
     //first with the regular columns
+    bind_names = "?,";
     for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column){
       column_names += (fmt("`%1%`,") % column->first).str();
       bind_names += "?,";
@@ -139,18 +157,8 @@ void table_spatialite_t::start()
 
     column_names += "`way`";
 
-    std::string insert_sql_wkt = (fmt("INSERT INTO %1% (%2%) VALUES (%3% GeomFromText(?, %4%))") % name % column_names % bind_names % srid).str();
-
-    if (SQLITE_OK != sqlite3_prepare_v2(sql_conn, insert_sql_wkt.c_str(), -1, &insert_stmt_wkt, 0)) {
-        throw std::runtime_error((fmt("preparing stament '%1%' failed: %2%\n") % insert_sql_wkt % sqlite3_errmsg(sql_conn)).str());
-    }
-
-     std::string insert_sql_wkb = (fmt("INSERT INTO %1% (%2%) VALUES (%3% GeomFromWKB(?, %4%))") % name % column_names % bind_names % srid).str();
-
-    if (SQLITE_OK != sqlite3_prepare_v2(sql_conn, insert_sql_wkb.c_str(), -1, &insert_stmt_wkb, 0)) {
-        throw std::runtime_error((fmt("preparing stament '%1' failed: %2%\n") % insert_sql_wkb % sqlite3_errmsg(sql_conn)).str());
-    }
-
+    init_prepared_statements();
+    
     begin();
 }
 
@@ -173,12 +181,13 @@ void table_spatialite_t::delete_row(const osmid_t id)
 
 void table_spatialite_t::write_row(const osmid_t id, const taglist_t &tags, const std::string &geom)
 {
-    int n=1;
+    int n=1, stat;
 
     sqlite3_stmt *insert_stmt = (geom[0] > 'F') ? insert_stmt_wkt : insert_stmt_wkb;
 
-    if (SQLITE_OK != sqlite3_bind_int(insert_stmt, n++, id)) {
-                throw std::runtime_error((fmt("bind_int failed: %1%\n") % sqlite3_errmsg(sql_conn)).str());
+    stat = sqlite3_bind_int(insert_stmt, n++, id);
+    if (SQLITE_OK != stat) {
+        throw std::runtime_error((fmt("bind_int failed: %1%\n") % stat).str());
     }
 
     for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column) {
@@ -243,12 +252,13 @@ void table_spatialite_t::connect()
     }
     
     sql_conn = _conn;
-    conn_count++;
     
     simple_query("SELECT load_extension('mod_spatialite.so');");
     simple_query("SELECT InitSpatialMetaData(1);");
     simple_query("PRAGMA read_uncommitted = True;");
   }
+
+  conn_count++;
 }
 
 

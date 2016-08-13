@@ -98,12 +98,13 @@ class table_spatialite_t : public table_t
         table_t::wkb_reader get_wkb_reader(const osmid_t id);
   
     protected:
-        std::string column_names;
+        std::string column_names, bind_names;
         sqlite3_stmt *insert_stmt_wkt;
         sqlite3_stmt *insert_stmt_wkb;
         void escape_type(const std::string &value, const std::string &type, std::string& dst);
         void connect();
         void simple_query(const std::string &sql);
+        void init_prepared_statements(void);
 };
 
 #endif
