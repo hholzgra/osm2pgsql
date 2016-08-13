@@ -2,6 +2,7 @@
 #cmakedefine HAVE_LSEEK64 1
 #cmakedefine HAVE_LUA 1
 #cmakedefine HAVE_MYSQL 1
+#cmakedefine HAVE_SPATIALITE 1
 #cmakedefine HAVE_POSIX_FADVISE 1
 #cmakedefine HAVE_POSIX_FALLOCATE 1
 #cmakedefine HAVE_SYNC_FILE_RANGE 1

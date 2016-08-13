@@ -48,7 +48,7 @@
 #endif
 
 /* example from: pg_dump -F p -t planet_osm gis
-COPY planet_osm (osm_id, name, place, landuse, leisure, "natural", man_made, waterway, highway, railway, amenity, tourism, learning, building, bridge, layer, way) FROM stdin;
+   COPY planet_osm (osm_id, name, place, landuse, leisure, "natural", man_made, waterway, highway, railway, amenity, tourism, learning, building, bridge, layer, way) FROM stdin;
 17959841        \N      \N      \N      \N      \N      \N      \N      bus_stop        \N      \N      \N      \N      \N      \N    -\N      0101000020E610000030CCA462B6C3D4BF92998C9B38E04940
 17401934        The Horn        \N      \N      \N      \N      \N      \N      \N      \N      pub     \N      \N      \N      \N    -\N      0101000020E6100000C12FC937140FD5BFB4D2F4FB0CE04940
 ...
@@ -659,6 +659,20 @@ output_sql_t::output_sql_t(const middle_query_t* mid_, const options_t &options_
              ));
 	} else
 #endif
+
+#if HAVE_SPATIALITE
+	if (m_options.output_backend == "spatialite") {
+            m_tables.push_back(std::shared_ptr<table_t>(
+                new table_spatialite_t(
+                    m_options.database_options, name, type, columns, m_options.hstore_columns,
+                    reproj->target_srs(),
+                    m_options.append, m_options.slim, m_options.droptemp, m_options.hstore_mode,
+                    m_options.enable_hstore_index, m_options.tblsmain_data, m_options.tblsmain_index
+                )
+             ));
+	} else
+#endif
+
 	{
 	    m_tables.push_back(std::shared_ptr<table_t>(
             new table_pgsql_t(

@@ -490,6 +490,8 @@ void expire_tiles::from_wkb(const char* wkb, osmid_t osm_id)
 
  */
 int expire_tiles::from_db(table_t* table, osmid_t osm_id) {
+    int count = 0;
+
     //bail if we dont care about expiry
     if (Options->expire_tiles_zoom < 0)
         return -1;
@@ -499,11 +501,13 @@ int expire_tiles::from_db(table_t* table, osmid_t osm_id) {
 
     //dirty the stuff
     const char* wkb = nullptr;
-    while((wkb = wkbs.get_next()))
+    while((wkb = wkbs.get_next())) {
         from_wkb(wkb, osm_id);
+        count++;
+    }
 
     //return how many rows were affected
-    return wkbs.get_count();
+    return count;
 }
 
 void expire_tiles::merge_and_destroy(expire_tiles &other) {

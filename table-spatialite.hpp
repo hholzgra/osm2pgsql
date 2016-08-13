@@ -1,5 +1,5 @@
-#ifndef TABLE_MYSQL_H
-#define TABLE_MYSQL_H
+#ifndef TABLE_SPATIALITE_H
+#define TABLE_SPATIALITE_H
 
 #include "osmtypes.hpp"
 
@@ -12,23 +12,23 @@
 #include <boost/optional.hpp>
 #include <boost/format.hpp>
 
-#include <mysql/mysql.h>
-
 #include "table.hpp"
+
+#include <sqlite3.h>
 
 typedef std::vector<std::string> hstores_t;
 typedef std::vector<std::pair<std::string, std::string> > columns_t;
 
-class table_mysql_t : public table_t
+class table_spatialite_t : public table_t
 {
     public:
-        table_mysql_t(const database_options_t &database_options, const std::string& name, const std::string& type, const columns_t& columns, const hstores_t& hstore_columns, const int srid,
+        table_spatialite_t(const database_options_t &database_options, const std::string& name, const std::string& type, const columns_t& columns, const hstores_t& hstore_columns, const int srid,
                 const bool append, const bool slim, const bool droptemp, const int hstore_mode, const bool enable_hstore_index,
                 const boost::optional<std::string>& table_space, const boost::optional<std::string>& table_space_index);
-        table_mysql_t(const table_mysql_t& other);
-        ~table_mysql_t();
+        table_spatialite_t(const table_spatialite_t& other);
+        ~table_spatialite_t();
 
-        table_mysql_t *clone() { return new table_mysql_t(*this); }
+        table_spatialite_t *clone() { return new table_spatialite_t(*this); }
         void teardown();
   
         void start();
@@ -43,13 +43,16 @@ class table_mysql_t : public table_t
 
         std::string const& get_name();
 
+        static int conn_count;
+        static sqlite3 *sql_conn;
+
     protected:
-        MYSQL *sql_conn;
-        struct mysql_result_closer
+  
+        struct sqlite_result_closer
         {
-            void operator() (MYSQL_RES *result)
+            void operator() (sqlite3_stmt *stmt)
             {
-                mysql_free_result(result);
+                sqlite3_finalize(stmt);
             }
 
         };
@@ -58,46 +61,49 @@ class table_mysql_t : public table_t
         //interface from retrieving well known binary geometry from the table
         class wkb_reader_impl: public table_t::wkb_reader_impl
         {
-            friend table_mysql_t;
+            friend table_spatialite_t;
             public:
                 const char* get_next()
                 {
-		    MYSQL_ROW row = mysql_fetch_row(m_result.get());
-		    if (row) {
-		        return row[0];
-		    } else {
-		        return nullptr;
-		    }
-                }
+		     int stat;
+		       
+		     stat = sqlite3_step(m_stmt.get());
+		     if (stat == SQLITE_ROW) {
+		         return (const char *)sqlite3_column_text(m_stmt.get(), 0);
+		     } else {
+		         return nullptr;
+		     }
+		}
                 int get_count() const
 	        {
+	  	    // TODO remove
 		    return m_count;
 		}
                 void reset()
                 {
-		  mysql_row_seek(m_result.get(), m_first);
+		    // TODO implement ... but it is never used anyway?
                 }
             private:
-                wkb_reader_impl(MYSQL_RES *result)
-		  : m_result(result),
-		    m_count(mysql_num_rows(result)),
-		    m_first(mysql_row_tell(result))
+                wkb_reader_impl(sqlite3_stmt *stmt)
+		  : m_stmt(stmt),
+		    m_count(0 /* TODO */),
+		    m_first(0 /* TODO */)
                 {}
 
-                std::unique_ptr<MYSQL_RES, mysql_result_closer> m_result;
+                std::unique_ptr<sqlite3_stmt, sqlite_result_closer> m_stmt;
                 int m_count;
-                MYSQL_ROW_OFFSET m_first;
+                int m_first;
         };
   
         table_t::wkb_reader get_wkb_reader(const osmid_t id);
   
     protected:
         std::string column_names;
+        sqlite3_stmt *insert_stmt_wkt;
+        sqlite3_stmt *insert_stmt_wkb;
         void escape_type(const std::string &value, const std::string &type, std::string& dst);
         void connect();
-        void simple_query(std::string sql);
-
-        std::string hstore_type;
+        void simple_query(const std::string &sql);
 };
 
 #endif

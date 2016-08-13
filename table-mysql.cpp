@@ -18,7 +18,8 @@ table_mysql_t::table_mysql_t(const database_options_t &database_options, const s
     table_t(database_options, name, type, columns, hstore_columns, srid, append,
    	    slim, drop_temp, hstore_mode, enable_hstore_index, table_space, table_space_index),
     sql_conn(nullptr),
-    column_names()
+    column_names(),
+    hstore_type("")
 {
   point_fmt = fmt("ST_GeomFromText('POINT(%.15g %.15g)')");
 }
@@ -26,11 +27,11 @@ table_mysql_t::table_mysql_t(const database_options_t &database_options, const s
 table_mysql_t::table_mysql_t(const table_mysql_t& other):
   table_t(other),
   sql_conn(nullptr),
-  column_names(other.column_names)
+  column_names(other.column_names),
+  hstore_type(other.hstore_type)
 {
     if (other.sql_conn) {
         connect();
-	simple_query("SET NAMES utf8");
     }
 }
 
@@ -71,8 +72,6 @@ void table_mysql_t::start()
     connect();
     fprintf(stderr, "Setting up table: %s\n", name.c_str());
 
-    simple_query("SET NAMES utf8");
-
     if (!append)
     {
         simple_query((fmt("DROP TABLE IF EXISTS %1%") % name).str());
@@ -91,7 +90,14 @@ void table_mysql_t::start()
 	  sql += (fmt("`%1%` %2%,") % column->first % column->second).str();
 	}
 
-	// TODO: we don't support hstore columns yet
+        //then with the hstore columns
+        for(hstores_t::const_iterator hcolumn = hstore_columns.begin(); hcolumn != hstore_columns.end(); ++hcolumn)
+            sql += (fmt("`%1%` %s%,") % (*hcolumn) % hstore_type).str();
+	
+        //add tags column
+	if (hstore_mode != HSTORE_NONE) {
+            sql += "`tags` " + hstore_type + ",";
+	}
 
 	sql += "way geometry NOT NULL, SPATIAL INDEX(way)) ENGINE=MyISAM";
 
@@ -109,23 +115,23 @@ void table_mysql_t::start()
       // TODO: check the columns against those in the existing table
     }
 
-    //generate column list for COPY
+    //generate column list for INSERT
     column_names = "`osm_id`,";
+    
     //first with the regular columns
-    for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column)
+    for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column) {
         column_names += (fmt("`%1%`,") % column->first).str();
-
-    // TODO: then with the hstore columns
-    // add tags column and geom column
-    // if (hstore_mode != HSTORE_NONE)
-    //    cols += "tags,";
+    }
+    
+    if (hstore_mode != HSTORE_NONE) {
+        column_names += "`tags`,";
+    }
 
     column_names += "`way`";
 }
 
 void table_mysql_t::stop()
 {
-  fprintf(stderr, "name: '%s'\n", name.c_str());
     simple_query((fmt("ALTER TABLE %1% ENABLE KEYS") % name).str());  
     teardown();
 }
@@ -144,16 +150,117 @@ void table_mysql_t::write_row(const osmid_t id, const taglist_t &tags, const std
 {
     std::string sql = (fmt("INSERT INTO %1% (%2%) VALUES ( %3%, ") % name % column_names % id).str();
 
+    // used to remember which columns have been written out already.
+    std::vector<bool> used;
+
+    if (hstore_mode != HSTORE_NONE) {
+        used.assign(tags.size(), false);
+    }
+    
     for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column)
     {
         int idx;
         if ((idx = tags.indexof(column->first)) >= 0)
         {
 	    escape_type(tags[idx].value, column->second, sql);
+	    if (hstore_mode == HSTORE_NORM) {
+	        used[idx] = true;
+	    }
         } else {
 	    sql += "NULL";
 	}
 	sql += ",";
+    }
+
+    for(hstores_t::const_iterator hstore_column = hstore_columns.begin(); hstore_column != hstore_columns.end(); ++hstore_column)
+    {
+        bool added = false;
+
+        //iterate through the list of tags, first one is always null
+        for (taglist_t::const_iterator xtags = tags.begin(); xtags != tags.end(); ++xtags)
+	  {
+            //check if the tag's key starts with the name of the hstore column
+            if(xtags->key.compare(0, hstore_column->size(), *hstore_column) == 0)
+	      {
+                //generate the short key name, somehow pointer arithmetic works against the key string...
+                const char* shortkey = xtags->key.c_str() + hstore_column->size();
+		
+                //and pack the shortkey with its value into the hstore
+		// TODO support both variants
+                if(added)
+		  sql += "','";
+		else
+		  sql += "COLUMN_CREATE('";
+
+		sql += shortkey; // TODO escape?
+		sql += "','";
+
+		{ 
+		  int len = xtags->value.length() * 2 + 1;
+		  
+		  if (len) {
+		    char *buf = (char *)malloc(len);
+		    
+		    mysql_real_escape_string(sql_conn, buf, xtags->value.c_str(), xtags->value.length());
+		    
+		    sql.append(buf);
+		    
+		    free(buf);
+		  }
+		}
+		
+                //we did at least one so we need commas from here on out
+                added = true;
+	      }
+	  }
+	
+        //finish the column off
+        //if you found not matching tags write a NUL
+        if(added)
+	  sql.append("'),");
+	else
+	  sql.append("NULL,");
+    }
+
+    if (hstore_mode != HSTORE_NONE) {
+      bool added = false;
+      for (size_t i = 0; i < tags.size(); ++i) {
+	const tag_t& xtag = tags[i];
+	//skip z_order tag and keys which have their own column
+	if (used[i] || ("z_order" == xtag.key))
+	  continue;
+	
+	if(added)
+	  sql += "','";
+	else
+	  // TODO support both variants
+	  sql += "COLUMN_CREATE('";
+	
+	sql += xtag.key;
+	sql += "','";
+	{ 
+	  int len = xtag.value.length() * 2 + 1;
+	  
+	  if (len) {
+	    char *buf = (char *)malloc(len);
+	    
+	    mysql_real_escape_string(sql_conn, buf, xtag.value.c_str(), xtag.value.length() );
+	    
+	    sql.append(buf);
+	    
+	    free(buf);
+	  }
+	}
+	
+	//we did at least one so we need commas from here on out
+	added = true;
+      }
+      
+      //finish the hstore column
+      if(added)
+	sql.append("'),");
+      else
+	sql.append("NULL,");
     }
 
     if (geom[0] == 'S') {
@@ -195,17 +302,35 @@ void table_mysql_t::connect()
     const char *user = database_options.username ? database_options.username->c_str()   : nullptr;
     const char *pwd  = database_options.password ? database_options.password->c_str()   : nullptr;
 
-    fprintf(stderr, "host: %s\n", host);
-    fprintf(stderr, "user: %s\n", user);
-    fprintf(stderr, "port: %d\n", port);
-    
     mysql_init(sql_conn);
     if (!mysql_real_connect(_conn, host, user, pwd, db, port, NULL, 0)) {
         throw std::runtime_error((fmt("Connection to database failed: %1%\n") % mysql_error(_conn)).str());
-	free((void *)_conn);
+	free((void *)_conn); // TODO never reached?
     }
 
     sql_conn = _conn;
+
+    simple_query("SET NAMES utf8");
+
+    simple_query("DROP TABLE IF EXISTS _feature_test");
+    if (0 == mysql_query(sql_conn, "CREATE TABLE _feature_test(id int primary key, foo json)")) {
+      hstore_type = "JSON";
+      simple_query("DROP TABLE IF EXISTS _feature_test");
+    } else if (0 == mysql_query(sql_conn, "SELECT COLUMN_CREATE('a','b')")) {
+      MYSQL_RES *res = mysql_store_result(sql_conn);
+      mysql_free_result(res);
+      hstore_type = "BLOB";
+    }
+
+
+    if (hstore_type.empty()) {
+      if (hstore_mode != HSTORE_NONE) {
+	 throw std::runtime_error((fmt("Database version %1% does not support --hstore") % mysql_get_server_info(sql_conn)).str());
+      }
+      if (hstore_columns.size() > 0) {
+	 throw std::runtime_error((fmt("Style has hstore columns but database version %1% does not support that") % mysql_get_server_info(sql_conn)).str());	
+      }
+    }
 }
 
 

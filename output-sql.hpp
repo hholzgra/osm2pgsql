@@ -16,6 +16,9 @@
 #if HAVE_MYSQL
 #  include "table-mysql.hpp"
 #endif
+#if HAVE_SPATIALITE
+#  include "table-spatialite.hpp"
+#endif
 
 
 #include <vector>

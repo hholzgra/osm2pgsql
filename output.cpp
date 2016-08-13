@@ -118,6 +118,9 @@ std::vector<std::shared_ptr<output_t> > output_t::create_outputs(const middle_qu
 #if HAVE_MYSQL
       "mysql, "
 #endif
+#if HAVE_SPATIALITE
+      "spatialite, "
+#endif
       "multi";
 
     if (options.output_backend == "pgsql") {
@@ -127,7 +130,12 @@ std::vector<std::shared_ptr<output_t> > output_t::create_outputs(const middle_qu
     } else if (options.output_backend == "mysql") {
         outputs.push_back(std::make_shared<output_sql_t>(mid, options));
 #endif
-
+	
+#if HAVE_SPATIALITE
+    } else if (options.output_backend == "spatialite") {
+        outputs.push_back(std::make_shared<output_sql_t>(mid, options));
+#endif
+	
     } else if (options.output_backend == "gazetteer") {
         outputs.push_back(std::make_shared<output_gazetteer_t>(mid, options));
 

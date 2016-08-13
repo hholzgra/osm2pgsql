@@ -10,9 +10,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(DATA_DIR \"${CMAKE_INSTALL_PREFIX}/share/osm2pgsql\")
 
-option(BUILD_TESTS "Build test suite" OFF)
-option(WITH_LUA    "Build with lua support" ON)
-option(WITH_MYSQL  "Build with MySQL support" OFF)
+option(BUILD_TESTS     "Build test suite"              OFF)
+option(WITH_LUA        "Build with lua support"        ON)
+option(WITH_MYSQL      "Build with MySQL support"      OFF)
+option(WITH_SPATIALITE "Build with SpatiaLite support" OFF)
 
 if (NOT TESTING_TIMEOUT)
   set(TESTING_TIMEOUT 1200)
@@ -112,6 +113,13 @@ if (WITH_MYSQL)
   set(HAVE_MYSQL 1)
 endif()
 
+if (WITH_SPATIALITE)
+  find_package(SPATIALITE REQUIRED)
+  find_package(SQLite3    REQUIRED)
+  include_directories(${SQLITE3_INCLUDE_DIR} ${SPATIALITE_INCLUDE_DIR})
+  SET(HAVE_SPATIALITE 1)
+endif()
+
 if (MSVC)
   # Boost thread needs extra libraries
   set(BOOST_EXTRA date_time chrono)
@@ -141,6 +149,11 @@ endif()
 
 if (MYSQL_FOUND)
   list(APPEND LIBS ${MYSQL_LIBRARIES})
+endif()
+
+if (SPATIALITE_FOUND)
+  list(APPEND LIBS ${SPATIALITE_LIBRARY})
+  list(APPEND LIBS ${SQLITE3_LIBRARIES})
 endif()
 
 if (WIN32)
@@ -247,6 +260,13 @@ if (MYSQL_FOUND)
   set(osm2pgsql_lib_SOURCES ${osm2pgsql_lib_SOURCES}
     table-mysql.cpp
     table-mysql.hpp
+  )
+endif()
+ 
+if (SPATIALITE_FOUND)
+  set(osm2pgsql_lib_SOURCES ${osm2pgsql_lib_SOURCES}
+    table-spatialite.cpp
+    table-spatialite.hpp
   )
 endif()
  
