@@ -23,7 +23,7 @@ table_t::table_t(const database_options_t &database_options, const string& name,
     columns(columns), hstore_columns(hstore_columns), table_space(table_space), table_space_index(table_space_index)
 {
     //if we dont have any columns
-    if(columns.size() == 0)
+    if(columns.size() == 0 && hstore_mode != HSTORE_ALL)
         throw std::runtime_error((fmt("No columns provided for table %1%") % name).str());
 
     //we use these a lot, so instead of constantly allocating them we predefine these
@@ -48,5 +48,4 @@ table_t::~table_t()
 std::string const& table_t::get_name() {
     return name;
 }
-
 
