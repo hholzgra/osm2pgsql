@@ -118,21 +118,28 @@ void table_mysql_t::start()
     //generate column list for INSERT
     column_names = "`osm_id`,";
     
-    //first with the regular columns
+    // first with the regular columns
     for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column) {
         column_names += (fmt("`%1%`,") % column->first).str();
     }
     
+    // then with the hstore columns
+    for(hstores_t::const_iterator hcolumn = hstore_columns.begin(); hcolumn != hstore_columns.end(); ++hcolumn) {
+      column_names += (fmt("`%1%`,") % (*hcolumn)).str();
+    }
+
+    // general --hstore column
     if (hstore_mode != HSTORE_NONE) {
         column_names += "`tags`,";
     }
 
+    // geometry column
     column_names += "`way`";
 }
 
 void table_mysql_t::stop()
 {
-    simple_query((fmt("ALTER TABLE %1% ENABLE KEYS") % name).str());  
+    simple_query((fmt("ALTER TABLE %1% ENABLE KEYS") % name).str());
     teardown();
 }
 
