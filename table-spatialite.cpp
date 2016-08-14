@@ -30,12 +30,16 @@ table_spatialite_t::table_spatialite_t(const database_options_t &database_option
 
 void table_spatialite_t::init_prepared_statements(void)
 {
+  // we need to prepare two different INSERT statements, one for Well Known Text, and one for Well Known Binary format
+
+  // WKT variant
   std::string insert_sql_wkt = (fmt("INSERT INTO %1% (%2%) VALUES (%3% GeomFromText(?, %4%))") % name % column_names % bind_names % srid).str();
 
   if (SQLITE_OK != sqlite3_prepare_v2(sql_conn, insert_sql_wkt.c_str(), -1, &insert_stmt_wkt, 0)) {
     throw std::runtime_error((fmt("preparing stament '%1%' failed: %2%\n") % insert_sql_wkt % sqlite3_errmsg(sql_conn)).str());
   }
 
+  // WKB variant
   std::string insert_sql_wkb = (fmt("INSERT INTO %1% (%2%) VALUES (%3% GeomFromWKB(?, %4%))") % name % column_names % bind_names % srid).str();
 
   if (SQLITE_OK != sqlite3_prepare_v2(sql_conn, insert_sql_wkb.c_str(), -1, &insert_stmt_wkb, 0)) {
@@ -49,6 +53,9 @@ table_spatialite_t::table_spatialite_t(const table_spatialite_t& other):
   column_names(other.column_names),
   bind_names(other.bind_names)
 {
+  /* with SQLite all instances share the same database hanlde,
+     but we can't simply copy over the prepared statement handles
+     so we have to recreated these again here */
   init_prepared_statements();
   conn_count++;
 }
@@ -60,9 +67,13 @@ table_spatialite_t::~table_spatialite_t()
 
 void table_spatialite_t::teardown()
 {
+  // TODO: prevent double calls (one explicit, one from destructor)?
+  
   if (conn_count > 0) {
     commit();
 
+    // if this was the last table object we need to close the
+    // shared SQLite database handle now
     if (--conn_count == 0) {
       if(sql_conn != nullptr) {
 	sqlite3_close(sql_conn);
@@ -100,51 +111,50 @@ void table_spatialite_t::start()
 
   fprintf(stderr, "Setting up table: %s\n", name.c_str());
 
-  if (!append)
-    {
-      simple_query((fmt("DROP TABLE IF EXISTS %1%") % name).str());
-    }
+  if (!append) {
+    simple_query((fmt("DROP TABLE IF EXISTS %1%") % name).str());
+  }
 
   /* These _tmp tables can be left behind if we run out of disk space */
   simple_query((fmt("DROP TABLE IF EXISTS %1%_tmp") % name).str());
 
-  if (!append)
-    {
-      //define the new table
-      string sql = (fmt("CREATE TABLE %1% (`osm_id` BIGINT") % name).str();
-
-      //first with the regular columns
-      for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column) {
-	sql += (fmt(",`%1%` %2%") % column->first % column->second).str();
-      }
-
-      //then with the hstore columns
-      for(hstores_t::const_iterator hcolumn = hstore_columns.begin(); hcolumn != hstore_columns.end(); ++hcolumn) {
-	sql += (fmt(", `%1%` TEXT") % (*hcolumn)).str();
-      }
-	
-      //add tags column
-      if (hstore_mode != HSTORE_NONE) {
-	sql += ", `tags` TEXT";
-      }
-
-      sql += ")";
-
+  if (!append) {
+    //define the new table
+    string sql = (fmt("CREATE TABLE %1% (`osm_id` BIGINT") % name).str();
+    
+    //first with the regular columns
+    for(columns_t::const_iterator column = columns.begin(); column != columns.end(); ++column) {
+      sql += (fmt(",`%1%` %2%") % column->first % column->second).str();
+    }
+    
+    //then with the hstore columns
+    for(hstores_t::const_iterator hcolumn = hstore_columns.begin(); hcolumn != hstore_columns.end(); ++hcolumn) {
+      sql += (fmt(", `%1%` TEXT") % (*hcolumn)).str();
+    }
+    
+    //add tags column
+    if (hstore_mode != HSTORE_NONE) {
+      sql += ", `tags` TEXT";
+    }
+    
+    sql += ")";
+    
+    simple_query(sql);
+    
+    // now add the Geometry column for `way`
+    sql = (fmt("SELECT AddGeometryColumn('%1%', 'way', %2%, 'GEOMETRY', 'XY');") % name % srid).str();
+    simple_query(sql);
+    
+    //slim mode needs this to be able to delete from tables in pending
+    if (slim && !drop_temp) {
+      std::string sql = (fmt("CREATE INDEX %1%_pkey ON %1% (osm_id)") % name).str();
       simple_query(sql);
+    }
 
-      sql = (fmt("SELECT AddGeometryColumn('%1%', 'way', %2%, 'GEOMETRY', 'XY');") % name % srid).str();
-	
-      simple_query(sql);
-
-      //slim mode needs this to be able to delete from tables in pending
-      if (slim && !drop_temp) {
-	std::string sql = (fmt("CREATE INDEX %1%_pkey ON %1% (osm_id)") % name).str();
-	simple_query(sql);
-      }
-	
-      simple_query((fmt("SELECT CreateSpatialIndex('%1%', 'way');") % name).str());
-    } //appending
-  else {
+    // create spacial index
+    // TODO do this at the very end instead of now?
+    simple_query((fmt("SELECT CreateSpatialIndex('%1%', 'way');") % name).str());
+  } else { //appending
     // TODO: check the columns against those in the existing table
   }
 
@@ -181,7 +191,6 @@ void table_spatialite_t::start()
 void table_spatialite_t::stop()
 {
   commit();
-
   teardown();
 }
 
@@ -199,7 +208,9 @@ void table_spatialite_t::write_row(const osmid_t id, const taglist_t &tags, cons
 {
   int n=1, stat;
 
-  sqlite3_stmt *insert_stmt = (geom[0] > 'F') ? insert_stmt_wkt : insert_stmt_wkb;
+  // simple heuristic: if the geometry string starts with a valid hex character
+  // it's a hex encoded WKB string, otherwise it's WKT
+  sqlite3_stmt *insert_stmt = isxdigit(geom[0]) ? insert_stmt_wkb : insert_stmt_wkt;
 
   // used to remember which columns have been written out already.
   std::vector<bool> used;
@@ -208,6 +219,7 @@ void table_spatialite_t::write_row(const osmid_t id, const taglist_t &tags, cons
     used.assign(tags.size(), false);
   }
 
+  // first bind the osm ID column
   stat = sqlite3_bind_int(insert_stmt, n++, id);
   if (SQLITE_OK != stat) {
     throw std::runtime_error((fmt("bind_int failed: %1%\n") % stat).str());
@@ -265,7 +277,7 @@ void table_spatialite_t::write_row(const osmid_t id, const taglist_t &tags, cons
     if (added) {
       json.append("\"}");
 	
-      if (SQLITE_OK != sqlite3_bind_text(insert_stmt, n++, json.c_str(), -1, SQLITE_STATIC)) {
+      if (SQLITE_OK != sqlite3_bind_text(insert_stmt, n++, json.c_str(), -1, SQLITE_TRANSIENT)) {
 	throw std::runtime_error((fmt("bind_text '%1%' failed for column %2%: %3%\n") % json % (*hcolumn) % sqlite3_errmsg(sql_conn)).str());
       }
     } else {
@@ -275,6 +287,7 @@ void table_spatialite_t::write_row(const osmid_t id, const taglist_t &tags, cons
     }
   }
 
+  // general `tags` hstore column
   if (hstore_mode != HSTORE_NONE) {
     std::string json = "{\"";
     bool added = false;
@@ -294,17 +307,20 @@ void table_spatialite_t::write_row(const osmid_t id, const taglist_t &tags, cons
 	
       escape4json(xtag.value, json);
 	
-      //we did at least one so we need commas from here on out
+      //we have seen at least one pair so we need commas from here on out
       added = true;
     }
 
     json += "\"}";
 
+    // bind the JSON string
+    // TODO: use bind_null instead on empty JSON?
     if (SQLITE_OK != sqlite3_bind_text(insert_stmt, n++, json.c_str(), -1, SQLITE_TRANSIENT)) {
       throw std::runtime_error((fmt("bind_text '%1%' failed for column tags: %2%\n") % json % sqlite3_errmsg(sql_conn)).str());
     }
   }
 
+  // bind the geometry
   if (insert_stmt == insert_stmt_wkt) {
     sqlite3_bind_text(insert_stmt, n++, geom.c_str(), -1, SQLITE_STATIC);
   } else {
@@ -317,9 +333,12 @@ void table_spatialite_t::write_row(const osmid_t id, const taglist_t &tags, cons
     sqlite3_bind_blob(insert_stmt, n++, bin, len, SQLITE_STATIC);
   }
 
+  // execute prepared statement
   if (SQLITE_DONE != sqlite3_step(insert_stmt)) {
     throw std::runtime_error((fmt("step failed: %1%\n") % sqlite3_errmsg(sql_conn)).str());
   }
+
+  // reset prepared statement so it can be reused with new bindings
   if (SQLITE_OK != sqlite3_reset(insert_stmt)) {
     throw std::runtime_error((fmt("reset failed: %1%\n") % sqlite3_errmsg(sql_conn)).str());
   }
@@ -340,9 +359,12 @@ table_t::wkb_reader table_spatialite_t::get_wkb_reader(const osmid_t id)
 
 void table_spatialite_t::connect()
 {
-  if (conn_count == 0) {
+  // all table objects have to share the same SQLite handle
+  // which only needs to be opened once
+  if (!sql_conn) {
     sqlite3 *_conn;
-
+    
+    // TODO: why these?
     sqlite3_config(SQLITE_CONFIG_SERIALIZED);
     sqlite3_enable_shared_cache(1);
 
@@ -352,11 +374,17 @@ void table_spatialite_t::connect()
 
     sql_conn = _conn;
 
+    // set up GIS support
+    // TODO: error handling
     simple_query("SELECT load_extension('mod_spatialite.so');");
     simple_query("SELECT InitSpatialMetaData(1);");
+
+    // TODO: why? performance?
     simple_query("PRAGMA read_uncommitted = True;");
   }
 
+  // count how many objects use the connection so that we can close it
+  // once nobody uses it anymore
   conn_count++;
 }
 
@@ -427,7 +455,7 @@ void table_spatialite_t::escape_type(const string &value, const string &type, st
 }
 
 
-
+// convenience function for executing statements without result set
 void table_spatialite_t::simple_query(const std::string &sql)
 {
   //  fprintf(stderr, "SQL: %s\n", sql.c_str());
@@ -439,7 +467,7 @@ void table_spatialite_t::simple_query(const std::string &sql)
   }
 }
 
-
+// TODO: there must be better/faster ways to do this ...
 void table_spatialite_t::escape4json(const std::string& src_string, std:: string& dst)
 {
   const char *src = src_string.c_str();
