@@ -185,6 +185,13 @@ struct pending_threaded_processor : public middle_t::pending_processor {
             else {
                 job = queue.top();
                 queue.pop();
+
+                size_t size = queue.size();
+		if (size % 1000 == 0) {
+                    fprintf(stderr, "\rstill pending: %ld      ", (long)size);
+		    fflush(stderr);
+                }		
+
             }
             mutex.unlock();
 
