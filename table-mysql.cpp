@@ -312,16 +312,16 @@ void table_mysql_t::connect()
 
     simple_query("SET NAMES utf8");
 
-    simple_query("DROP TABLE IF EXISTS _feature_test");
-    if (0 == mysql_query(sql_conn, "CREATE TABLE _feature_test(id int primary key, foo json)")) {
+    if (0 == mysql_query(sql_conn, "CREATE TEMPORARY TABLE _feature_test(id int primary key, foo json)")) {
+      // MySQL with native JSON type
       hstore_type = "JSON";
       simple_query("DROP TABLE IF EXISTS _feature_test");
     } else if (0 == mysql_query(sql_conn, "SELECT COLUMN_CREATE('a','b')")) {
+      // MariaDB with Dynamic Columns
       MYSQL_RES *res = mysql_store_result(sql_conn);
       mysql_free_result(res);
       hstore_type = "BLOB";
     }
-
 
     if (hstore_type.empty()) {
       if (hstore_mode != HSTORE_NONE) {
