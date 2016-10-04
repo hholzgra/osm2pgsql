@@ -1,0 +1,58 @@
+language: cpp
+sudo: false
+addons:
+  apt:
+    sources:
+    - boost-latest
+    - ubuntu-toolchain-r-test
+    packages:
+    - g++-4.8
+    - libexpat1-dev
+    - libgeos-dev
+    - libgeos++-dev
+    - libpq-dev
+    - libbz2-dev
+    - libproj-dev
+    - lua5.2
+    - liblua5.2-dev
+    - libboost1.55-dev
+    - libboost-system1.55-dev
+    - libboost-filesystem1.55-dev
+matrix:
+  include:
+    - os: linux
+      compiler: clang
+      env: CXXFLAGS="-pedantic -Werror"
+    - os: linux
+      compiler: gcc
+      env: RUNTEST="-L NoDB" CXXFLAGS="-pedantic -Werror"
+    - os: osx
+      compiler: clang
+      env: RUNTEST="-L NoDB" CXXFLAGS="-pedantic -Werror"
+before_install:
+  - if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
+      brew install lua;
+    fi
+# update versions
+install:
+  - if [[ $CC == 'gcc' ]]; then
+      export CC=gcc-4.8;
+    fi
+  - if [[ $CXX == 'g++' ]]; then
+      export CXX=g++-4.8;
+    fi
+before_script:
+  - $CXX --version
+  - xml2-config --version
+  - geos-config --version
+  - proj | head -n1
+  - lua -v
+script:
+  - mkdir build && cd build
+  - cmake .. -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+  - make -j2
+  - echo "Running tests that does not require PostgreSQL server"
+  - if [[ $RUNTEST ]]; then ctest -VV $RUNTEST; fi
+after_failure:
+  - # rerun make, but verbosely
+    make VERBOSE=1

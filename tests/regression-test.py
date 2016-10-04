@@ -1,13 +1,17 @@
+#!/usr/bin/env python
+
 import unittest
 import psycopg2
 import os
-from pwd import getpwnam
+import fnmatch
 import subprocess
 
+exe_path="./osm2pgsql"
 full_import_file="tests/liechtenstein-2013-08-03.osm.pbf"
 multipoly_import_file="tests/test_multipolygon.osm" #This file contains a number of different multi-polygon test cases
 diff_import_file="tests/000466354.osc.gz"
 diff_multipoly_import_file="tests/test_multipolygon_diff.osc" #This file contains a number of different multi-polygon diff processing test cases
+lua_test_enabled = os.environ.get("HAVE_LUA", True)
 
 created_tablespace = 0
 
@@ -28,14 +32,14 @@ sql_test_statements=[
     ( 11, 'Absence of way table', 'SELECT count(*) FROM pg_tables WHERE tablename = \'planet_osm_ways\'', 0),
     ( 12, 'Absence of rel line', 'SELECT count(*) FROM pg_tables WHERE tablename = \'planet_osm_rels\'', 0),
     ( 13, 'Basic polygon area', 'SELECT round(sum(cast(ST_Area(way) as numeric)),0) FROM planet_osm_polygon;', 1223800814),
-    ( 14, 'Gazetteer place count', 'SELECT count(*) FROM place', 4500),
-    ( 15, 'Gazetteer place node count', 'SELECT count(*) FROM place WHERE osm_type = \'N\'', 779),
-    ( 16, 'Gazetteer place way count', 'SELECT count(*) FROM place WHERE osm_type = \'W\'', 3699),
-    ( 17, 'Gazetteer place rel count', 'SELECT count(*) FROM place WHERE osm_type = \'R\'', 22),
-    ( 18, 'Gazetteer post-diff place count', 'SELECT count(*) FROM place', 4554),
-    ( 19, 'Gazetteer post-diff place node count', 'SELECT count(*) FROM place WHERE osm_type = \'N\'', 788),
-    ( 20, 'Gazetteer post-diff place way count', 'SELECT count(*) FROM place WHERE osm_type = \'W\'', 3744),
-    ( 21, 'Gazetteer post-diff place rel count', 'SELECT count(*) FROM place WHERE osm_type = \'R\'', 22),
+    ( 14, 'Gazetteer place count', 'SELECT count(*) FROM place', 2837),
+    ( 15, 'Gazetteer place node count', 'SELECT count(*) FROM place WHERE osm_type = \'N\'', 759),
+    ( 16, 'Gazetteer place way count', 'SELECT count(*) FROM place WHERE osm_type = \'W\'', 2059),
+    ( 17, 'Gazetteer place rel count', 'SELECT count(*) FROM place WHERE osm_type = \'R\'', 19),
+    ( 18, 'Gazetteer post-diff place count', 'SELECT count(*) FROM place', 2878),
+    ( 19, 'Gazetteer post-diff place node count', 'SELECT count(*) FROM place WHERE osm_type = \'N\'', 764),
+    ( 20, 'Gazetteer post-diff place way count', 'SELECT count(*) FROM place WHERE osm_type = \'W\'', 2095),
+    ( 21, 'Gazetteer post-diff place rel count', 'SELECT count(*) FROM place WHERE osm_type = \'R\'', 19),
     ( 22, 'Gazetteer housenumber count', 'SELECT count(*) FROM place WHERE housenumber is not null', 199),
     ( 23, 'Gazetteer post-diff housenumber count count', 'SELECT count(*) FROM place WHERE housenumber is not null', 199),
     ( 24, 'Gazetteer isin count', 'SELECT count(*) FROM place WHERE isin is not null', 239),
@@ -113,7 +117,7 @@ sql_test_statements=[
     ( 65, 'Multipolygon non copying of tags from outer with polygon tags on relation (presence of way)',
       'SELECT round(ST_Area(way)) FROM planet_osm_polygon WHERE osm_id = 83 and "landuse" = \'farmland\'', 24859),
     ( 66, 'Multipolygon diff moved point of outer way case (Tags from outer way)',
-      'SELECT round(ST_Area(way)) FROM planet_osm_polygon WHERE osm_id = -15 and landuse = \'residential\' and name = \'Name_way\'', 24751),
+      'SELECT round(ST_Area(way)) FROM planet_osm_polygon WHERE osm_id = -15 and landuse = \'residential\' and name = \'Name_way\'', 24750),
     ( 67, 'Multipolygon diff moved point of inner way case (Tags from relation)',
       'SELECT round(ST_Area(way)) FROM planet_osm_polygon WHERE osm_id = -1 and landuse = \'residential\' and name = \'Name_rel\'', 13949),
     ( 68, 'Multipolygon point of inner way case (Tags from relation)',
@@ -165,13 +169,13 @@ sql_test_statements=[
     ( 91, 'Basic line length', 'SELECT round(sum(ST_Length(way))) FROM planet_osm_line;', 4269394),
     ( 92, 'Basic line length', 'SELECT round(sum(ST_Length(way))) FROM planet_osm_roads;', 2032023),
     ( 93, 'Basic number of hstore points tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_point;', 4228),
-    ( 94, 'Basic number of hstore roads tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_roads;', 2316),
-    ( 95, 'Basic number of hstore lines tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_line;', 10897),
-    ( 96, 'Basic number of hstore polygons tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_polygon;', 9540),
+    ( 94, 'Basic number of hstore roads tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_roads;', 2317),
+    ( 95, 'Basic number of hstore lines tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_line;', 11134),
+    ( 96, 'Basic number of hstore polygons tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_polygon;', 9541),
     ( 97, 'Diff import number of hstore points tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_point;', 4352),
-    ( 98, 'Diff import number of hstore roads tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_roads;', 2340),
-    ( 99, 'Diff import number of hstore lines tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_line;', 11020),
-    ( 100, 'Diff import number of hstore polygons tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_polygon;', 9834),
+    ( 98, 'Diff import number of hstore roads tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_roads;', 2341),
+    ( 99, 'Diff import number of hstore lines tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_line;', 11257),
+    ( 100, 'Diff import number of hstore polygons tags', 'SELECT sum(array_length(akeys(tags),1)) FROM planet_osm_polygon;', 9835),
     #**** Tests to check if inner polygon appears when outer tags change after initially identicall inner and outer way tags in a multi-polygon ****
     #**** These tests are currently broken and noted in trac ticket #2853 ****
     ( 101, 'Multipolygon identical tags on inner and outer (presence of relation)',
@@ -186,7 +190,7 @@ sql_test_statements=[
       'SELECT round(sum(ST_Area(way))) FROM planet_osm_polygon WHERE osm_id = 112 and "natural" = \'heath\'', 1234),
     #**** Test to check that only polygon tags that are present on all outer ways get copied over to the multi-polygon relation ****
     ( 106, 'Multipolygon copy outer tags (presence of relation)',
-      'SELECT round(sum(ST_Area(way))) FROM planet_osm_polygon WHERE osm_id = -38 and "natural" = \'water\'', 29340),
+      'SELECT round(sum(ST_Area(way))) FROM planet_osm_polygon WHERE osm_id = -38 and "natural" = \'water\'', 29341),
     ( 107, 'Multipolygon copy outer tags (absence of partial outer tags)',
       'SELECT count(*) FROM planet_osm_polygon WHERE osm_id = -38 and "natural" = \'water\' and "man_made" = \'pier\'', 0),
     ( 108, 'Multipolygon copy outer tags (absence of multi-polygon tagged outer way)',
@@ -207,7 +211,7 @@ sql_test_statements=[
       'SELECT round(sum(ST_length(way))) FROM planet_osm_line WHERE (osm_id = 127 OR osm_id = 122) AND "man_made" = \'pier\'', 318),
     #**** Test to check that if polygon tags are on both outer ways and relation, polygons don't get duplicated in the db ****
     ( 116, 'Multipolygon tags on both outer and relation (presence of relation)',
-      'SELECT round(sum(ST_Area(way))) FROM planet_osm_polygon WHERE osm_id = -39 and "landuse" = \'forest\'', 10379),
+      'SELECT round(sum(ST_Area(way))) FROM planet_osm_polygon WHERE osm_id = -39 and "landuse" = \'forest\'', 10378),
     ( 117, 'Multipolygon tags on both outer and relation (absence of outer way)',
       'SELECT count(*) FROM planet_osm_polygon WHERE osm_id = 138', 0),
     ( 118, 'Multipolygon tags on both outer and relation with additional tags on relation (presence of relation)',
@@ -226,10 +230,12 @@ class NonSlimRenderingTestSuite(unittest.TestSuite):
                                               "testTwo")))
         self.addTest(BasicNonSlimTestCase("basic case",[], [0,1,2,3,10,13, 91, 92]))
         self.addTest(BasicNonSlimTestCase("slim --drop case",["--slim","--drop"], [0,1,2,3, 10, 11, 12, 13, 91, 92]))
+        self.addTest(BasicNonSlimTestCase("Hstore index drop", ["--slim", "--hstore", "--hstore-add-index", "--drop"], [51,52,53,54]))
         self.addTest(BasicNonSlimTestCase("lat lon projection",["-l"], [0,4,5,3,10, 11, 12]))
-        #Failing test 3,13 due to difference in handling mixture of tags on ways and relations, where the correct behaviour is non obvious
-        #self.addTest(BasicNonSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,3,10,13,91,92]))
-        self.addTest(BasicNonSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,10,91,92]))
+        if lua_test_enabled:
+            #Failing test 3,13 due to difference in handling mixture of tags on ways and relations, where the correct behaviour is non obvious
+            #self.addTest(BasicNonSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,3,10,13,91,92]))
+            self.addTest(BasicNonSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,10,91,92]))
 
 
 class SlimRenderingTestSuite(unittest.TestSuite):
@@ -248,17 +254,19 @@ class SlimRenderingTestSuite(unittest.TestSuite):
         self.addTest(BasicSlimTestCase("Hstore name column", ["-z", "name:"], [0,1,2,3],[6,7,8,9]))
         self.addTest(BasicSlimTestCase("Hstore", ["-k"], [51,52,53,54],[55,56,57,58]))
         self.addTest(BasicSlimTestCase("Hstore all", ["-j"], [51,52,53,54,93,94,95,96],[55,56,57,58, 97, 98, 99, 100]))
+        self.addTest(BasicSlimTestCase("Hstore index", ["--hstore", "--hstore-add-index"], [51,52,53,54],[55,56,57,58]))
         #tests dont check for osm_timestamp which is currently missing in the pbf parser
         self.addTest(BasicSlimTestCase("Extra tags hstore match only", ["-x", "-k", "--hstore-match-only"], [0,1,2,3],[6,7,8,9]))
         self.addTest(BasicSlimTestCase("Extra tags hstore all", ["-j", "-x"], [51,52,53,54,59,60,61],[55,56,57,58]))
-        
+
         self.addTest(BasicSlimTestCase("--tablespace-main-data", ["--tablespace-main-data", "tablespacetest"], [0,1,2,3,13,91,92],[6,7,8,9]))
         self.addTest(BasicSlimTestCase("--tablespace-main-index", ["--tablespace-main-index", "tablespacetest"], [0,1,2,3,13,91,92],[6,7,8,9]))
         self.addTest(BasicSlimTestCase("--tablespace-slim-data", ["--tablespace-slim-data", "tablespacetest"], [0,1,2,3,13,91,92],[6,7,8,9]))
         self.addTest(BasicSlimTestCase("--tablespace-slim-index", ["--tablespace-slim-index", "tablespacetest"], [0,1,2,3,13,91,92],[6,7,8,9]))
-        #Failing test 3,13,9 due to difference in handling mixture of tags on ways and relations, where the correct behaviour is non obvious
-        #self.addTest(BasicNonSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,3,10,13,91,92]))
-        self.addTest(BasicSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,91,92],[6,7,8]))
+        if lua_test_enabled:
+            #Failing test 3,13,9 due to difference in handling mixture of tags on ways and relations, where the correct behaviour is non obvious
+            #self.addTest(BasicNonSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,3,10,13,91,92]))
+            self.addTest(BasicSlimTestCase("--tag-transform-script", ["--tag-transform-script", "style.lua"], [0,1,2,91,92],[6,7,8]))
 
 
 class SlimGazetteerTestSuite(unittest.TestSuite):
@@ -299,10 +307,11 @@ class MultiPolygonSlimRenderingTestSuite(unittest.TestSuite):
                                               [26,27,28,29,30,31,32,33,34,35,36,37,38, 39, 40,41,42, 43, 44, 47, 48,  62, 63, 64, 65, 68, 69, 72, 73, 74, 78, 79, 82, 83, 84, 86, 87, 88,
                                                106,107,108,109,110,111,112,113,114,115,116,117,118,119],
                                               [28,29,30,31,32,33,34,35,36,37,38,39,40,41,42, 43, 44, 47, 48, 62, 63, 64, 65, 66, 67, 70, 71, 75, 76, 79, 80, 81, 83, 84, 85, 87, 89, 90]))
-        self.addTest(MultipolygonSlimTestCase("lua tagtransform case", ["--tag-transform-script", "style.lua"],
+        if lua_test_enabled:
+            self.addTest(MultipolygonSlimTestCase("lua tagtransform case", ["--tag-transform-script", "style.lua"],
                                               [26,27,28,29,30,31,32,33,34,35,36,37,38, 39, 40, 41, 42, 43, 44, 47, 48,  62, 64, 65,68,69, 72, 73, 74, 78, 79, 82, 83, 84, 86, 87, 88,116,117,118,119],
                                               [28,29,30,31,32,33,34,35,36,37,38,39,40,41,42, 43, 44, 47, 48, 62, 63,64, 65, 66, 67, 70, 71, 75, 76, 79, 80, 81, 83, 84, 85, 87, 89, 90]))
-        self.addTest(MultipolygonSlimTestCase("lua tagtransform case with hstore", ["--tag-transform-script", "style.lua", "-k"],
+            self.addTest(MultipolygonSlimTestCase("lua tagtransform case with hstore", ["--tag-transform-script", "style.lua", "-k"],
                                               [26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,47,48,62,63,64,65,68,69,72,73,74,78,79,82,83,84,86,87,88,116,117,118,119],
                                               [28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,47,48,62,63,64,65,66,67,70,71,75,76,79,80,81,83,84,85,87,89,90]))
 
@@ -332,7 +341,7 @@ class BaseTestCase(unittest.TestCase):
             self.conn=psycopg2.connect("dbname='osm2pgsql-test'")
             self.conn.autocommit = True
             self.cur = self.conn.cursor()
-        except Exception, e:
+        except Exception as e:
             print "I am unable to connect to the database." + e
 
     def dbClose(self):
@@ -348,7 +357,7 @@ class BaseTestCase(unittest.TestCase):
                 try:
                     self.cur.execute(sql_test_statements[i][2])
                     res = self.cur.fetchall()
-                except Exception, e:
+                except Exception as e:
                     self.assertEqual(0, 1, str(sql_test_statements[i][0]) + ": Failed to execute " + sql_test_statements[i][1] +
                                      " (" + sql_test_statements[i][2] + ") {" + str(self.parameters) +"}")
                 if (res == None):
@@ -365,30 +374,36 @@ class BaseTestCase(unittest.TestCase):
 #****************************************************************
 
 class BaseNonSlimTestCase(BaseTestCase):
-    
-    def setUpGeneric(self, parameters, file):
-        returncode = subprocess.call(["./osm2pgsql", "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [full_import_file])
-        self.assertEqual( returncode, 0, "Execution of osm2pgsql with options: " + str(parameters) + " failed")
 
-class BaseSlimTestCase(BaseTestCase):    
-        
     def setUpGeneric(self, parameters, file):
-        returncode = subprocess.call(["./osm2pgsql", "--slim", "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [file])
-        self.assertEqual( returncode, 0, "Execution of osm2pgsql --slim with options: " + str(parameters) + " failed")
+        proc = subprocess.Popen([exe_path, "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [full_import_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (outp, outerr) = proc.communicate()
+        self.assertEqual (proc.returncode, 0, "Execution of osm2pgsql with options: '%s' failed:\n%s\n%s\n" % (str(parameters), outp, outerr))
+
+class BaseSlimTestCase(BaseTestCase):
+
+    def setUpGeneric(self, parameters, file):
+        proc = subprocess.Popen([exe_path, "--slim", "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (outp, outerr) = proc.communicate()
+        self.assertEqual (proc.returncode, 0, "Execution of osm2pgsql --slim with options: '%s' failed:\n%s\n%s\n" % (str(parameters), outp, outerr))
 
     def updateGeneric(self, parameters, file):
-        returncode = subprocess.call(["./osm2pgsql", "--slim", "--append", "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [file])
-        self.assertEqual( returncode, 0, "Execution of osm2pgsql --slim --append with options: " + str(parameters) + " failed")
+        proc = subprocess.Popen([exe_path, "--slim", "--append", "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (outp, outerr) = proc.communicate()
+        self.assertEqual (proc.returncode, 0, "Execution of osm2pgsql --slim --append with options: '%s' failed:\n%s\n%s\n" % (str(parameters), outp, outerr))
 
-class BaseGazetteerTestCase(BaseTestCase):    
-        
+class BaseGazetteerTestCase(BaseTestCase):
+
     def setUpGeneric(self, parameters, file):
-        returncode = subprocess.call(["./osm2pgsql", "--slim", "-Ogazetteer", "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [file])
-        self.assertEqual( returncode, 0, "Execution of osm2pgsql --slim -Ogazetteer with options: " + str(parameters) + " failed")
+        proc = subprocess.Popen([exe_path, "--slim", "-Ogazetteer", "-Sdefault.style", "-dosm2pgsql-test"] + parameters + [file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (outp, outerr) = proc.communicate()
+        self.assertEqual (proc.returncode, 0, "Execution of osm2pgsql --slim gazetteer options: '%s' failed:\n%s\n%s\n" % (str(parameters), outp, outerr))
 
     def updateGeneric(self, parameters, file):
-        returncode = subprocess.call(["./osm2pgsql", "--slim", "-Ogazetteer", "--append", "-Sdefault.style", "-dosm2pgsql-test", "-C100"] + parameters + [file])
-        self.assertEqual( returncode, 0, "Execution of osm2pgsql --slim -Ogazetteer --append with options: " + str(parameters) + " failed")
+        proc = subprocess.Popen([exe_path, "--slim", "-Ogazetteer", "--append", "-Sdefault.style", "-dosm2pgsql-test"] + parameters + [file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (outp, outerr) = proc.communicate()
+        self.assertEqual (proc.returncode, 0, "Execution of osm2pgsql --slim --append gazetteer options: '%s' failed:\n%s\n%s\n" % (str(parameters), outp, outerr))
+
 
 #****************************************************************
 class BasicNonSlimTestCase(BaseNonSlimTestCase):
@@ -473,6 +488,22 @@ class BasicGazetteerTestCase(BaseGazetteerTestCase):
         self.executeStatements(self.postDiffStatements)
 
 
+#****************************************************************
+#****************************************************************
+def findContribSql(filename):
+
+    # Try to get base dir for postgres contrib
+    try:
+        postgis_base_dir = os.popen('pg_config | grep -m 1 "^INCLUDEDIR ="').read().strip().split(' ')[2].split('/include')[0]
+    except:
+        postgis_base_dir = '/usr'
+
+    # Search for the actual sql file
+    for root, dirs, files in os.walk(postgis_base_dir):
+        if 'share' in root and 'postgresql' in root and 'contrib' in root and len(fnmatch.filter(files, filename)) > 0:
+            return '/'.join([root, filename])
+    else:
+        raise Exception('Cannot find %s searching under %s' % (filename, postgis_base_dir))
 
 #****************************************************************
 #****************************************************************
@@ -481,23 +512,23 @@ def setupDB():
     try:
         gen_conn=psycopg2.connect("dbname='template1'")
         gen_conn.autocommit = True
-    except Exception, e:
+    except Exception as e:
         print "I am unable to connect to the database."
-        exit()
+        exit(1)
 
     try:
         gen_cur = gen_conn.cursor()
-    except Exception, e:
+    except Exception as e:
         gen_conn.close()
         print "I am unable to connect to the database."
-        exit()
+        exit(1)
 
     try:
         gen_cur.execute("""DROP DATABASE IF EXISTS \"osm2pgsql-test\"""")
         gen_cur.execute("""CREATE DATABASE \"osm2pgsql-test\" WITH ENCODING 'UTF8'""")
-    except Exception, e:
+    except Exception as e:
         print "Failed to create osm2pgsql-test db" + e.pgerror
-        exit();
+        exit(1);
     finally:
         gen_cur.close()
         gen_conn.close()
@@ -505,68 +536,58 @@ def setupDB():
     try:
         test_conn=psycopg2.connect("dbname='osm2pgsql-test'")
         test_conn.autocommit = True
-    except Exception, e:
+    except Exception as e:
         print "I am unable to connect to the database." + e
-        exit()
+        exit(1)
 
     try:
         test_cur = test_conn.cursor()
-    except Exception, e:
+    except Exception as e:
         print "I am unable to connect to the database." + e
         gen_conn.close()
-        exit()
+        exit(1)
 
     try:
+
+        # Check the tablespace
         try:
             global created_tablespace
+            created_tablespace = 0
+
             test_cur.execute("""SELECT spcname FROM pg_tablespace WHERE spcname = 'tablespacetest'""")
             if test_cur.fetchone():
                 print "We already have a tablespace, can use that"
-                created_tablespace = 0
             else:
-                print "For the test, we need to create a tablespace. This needs root privilidges"
-                created_tablespace = 1
-                ### This makes postgresql read from /tmp
-                ## Does this have security implications like opening this to a possible symlink attack?
-                try:
-                    os.mkdir("/tmp/psql-tablespace")
-                    returncode = subprocess.call(["/usr/bin/sudo", "/bin/chown", "postgres.postgres", "/tmp/psql-tablespace"])
-                    test_cur.execute("""CREATE TABLESPACE tablespacetest LOCATION '/tmp/psql-tablespace'""")
-                except Exception, e:
-                    os.rmdir("/tmp/psql-tablespace")
-                    self.assertEqual(0, 1, "Failed to create tablespace")
-        except Exception, e:
+                print "The test needs a temporary tablespace to run in, but it does not exist. Please create the temporary tablespace. On Linux, you can do this by running:"
+                print "  sudo mkdir -p /tmp/psql-tablespace"
+                print "  sudo /bin/chown postgres.postgres /tmp/psql-tablespace"
+                print "  psql -c \"CREATE TABLESPACE tablespacetest LOCATION '/tmp/psql-tablespace'\" postgres"
+                exit(77)
+        except Exception as e:
             print "Failed to create directory for tablespace" + str(e)
 
-
+        # Check for postgis
         try:
             test_cur.execute("""CREATE EXTENSION postgis;""")
         except:
             test_conn.rollback()
-            # Guess the directory from the postgres version.
-            # TODO: make the postgisdir configurable. Probably
-            # only works on Debian-based distributions at the moment.
-            postgisdir = ('/usr/share/postgresql/%d.%d/contrib' %
-                        (test_conn.server_version / 10000, (test_conn.server_version / 100) % 100))
-            for fl in os.listdir(postgisdir):
-                if fl.startswith('postgis'):
-                    newdir = os.path.join(postgisdir, fl)
-                    if os.path.isdir(newdir):
-                        postgisdir = newdir
-                        break
-            else:
-                raise Exception('Cannot find postgis directory.')
-            pgscript = open(os.path.join(postgisdir, 'postgis.sql'),'r').read()
-            test_cur.execute(pgscript)
-            pgscript = open(os.path.join(postgisdir, 'spatial_ref_sys.sql'), 'r').read()
+
+            pgis = findContribSql('postgis.sql')
+            pgscript = open(pgis).read()
             test_cur.execute(pgscript)
 
+            srs = findContribSql('spatial_ref_sys.sql')
+            pgscript = open(srs).read()
+            test_cur.execute(pgscript)
+
+        # Check for hstore support
         try:
             test_cur.execute("""CREATE EXTENSION hstore;""")
+        except Exception as e:
+            hst = findContribSql('hstore.sql')
+            pgscript = open(hst).read()
+            test_cur.execute(pgscript)
 
-        except Exception, e:
-            print "I am unable to create extensions: " + e.pgerror
-            exit()
     finally:
         test_cur.close()
         test_conn.close()
@@ -577,17 +598,17 @@ def tearDownDB():
         gen_conn=psycopg2.connect("dbname='template1'")
         gen_conn.autocommit = True
         gen_cur = gen_conn.cursor()
-    except Exception, e:
+    except Exception as e:
         print "I am unable to connect to the database."
-        exit()
+        exit(1)
 
     try:
         gen_cur.execute("""DROP DATABASE IF EXISTS \"osm2pgsql-test\"""")
         if (created_tablespace == 1):
             gen_cur.execute("""DROP TABLESPACE IF EXISTS \"tablespacetest\"""")
-    except Exception, e:
+    except Exception as e:
         print "Failed to clean up osm2pgsql-test db" + e.pgerror
-        exit();
+        exit(1);
 
     gen_cur.close()
     gen_conn.close()
@@ -595,11 +616,38 @@ def tearDownDB():
         returncode = subprocess.call(["/usr/bin/sudo", "/bin/rmdir", "/tmp/psql-tablespace"])
 
 
+if __name__ == "__main__":
+
+    from optparse import OptionParser
+
+    parser = OptionParser()
+    parser.add_option("-f", dest="osm_file", action="store", metavar="FILE",
+                      default=full_import_file,
+                      help="Import a specific osm file [default=%default]")
+    parser.add_option("-x", dest="exe_path", action="store", metavar="FILE",
+                      default=exe_path,
+                      help="Use specified osm2pgsql executuable [default=%default]")
+    (options, args) = parser.parse_args()
+
+    if options.osm_file:
+        full_import_file = options.osm_file
+    if options.exe_path:
+        exe_path = options.exe_path
 
 ts2 = CompleteTestSuite()
+success = False
 try:
     setupDB()
     runner = unittest.TextTestRunner()
-    runner.run(ts2)
+    result = runner.run(ts2)
+    success = result.wasSuccessful()
+
 finally:
     tearDownDB()
+
+if success:
+    print "All tests passed :-)"
+    exit(0)
+else:
+    print "Some tests failed :-("
+    exit(1)
