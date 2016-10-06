@@ -347,6 +347,10 @@ struct pending_threaded_processor : public middle_t::pending_processor {
                 original_output->get()->merge_expire_trees(clone_output->get());
             }
         }
+
+        while (clones.size()) {
+		clones.pop_back();
+        }
     }
 
 private:
@@ -406,10 +410,10 @@ void osmdata_t::stop() {
 
     // XXX we might get too many parallel processes here
     //     use osmium worker pool instead
+    futures.push_back(std::async(&middle_t::stop, mid.get()));
     for (auto& out: outs) {
         futures.push_back(std::async(&output_t::stop, out.get()));
     }
-    futures.push_back(std::async(&middle_t::stop, mid.get()));
 
     for (auto& f: futures) {
       f.get();
